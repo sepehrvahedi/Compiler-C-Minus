@@ -3,6 +3,7 @@
 
 import token_types as tt
 
+
 class Scanner:
     """
     A lexical analyzer (scanner) for the C-minus language.
@@ -77,10 +78,10 @@ class Scanner:
                     return True
 
                 if char == '*':
-                    self._advance() # Consume '*'
+                    self._advance()  # Consume '*'
                     next_char = self._peek()
                     if next_char == '/':
-                        self._advance() # Consume '/' - comment successfully closed
+                        self._advance()  # Consume '/' - comment successfully closed
                         return True
                     else:
                         if len(comment_content) < 7: comment_content += '*'
@@ -88,7 +89,6 @@ class Scanner:
                 else:
                     if len(comment_content) < 7: comment_content += char
                     self._advance()
-
 
         return False
 
@@ -160,14 +160,13 @@ class Scanner:
                 return (tt.SYMBOL, first_char)
             else:
                 self._record_error(first_char, "Invalid input", self.lineno)
-                return (tt.ERROR, first_char) # Discard invalid symbol
+                return (tt.ERROR, first_char)  # Discard invalid symbol
 
         else:
             # If the character consumed wasn't a recognized symbol start
             # This handles characters like '@', '#', etc.
             self._record_error(first_char, "Invalid input", self.lineno)
             return (tt.ERROR, first_char)
-
 
     def _record_error(self, error_string, message, lineno):
         """Records a lexical error."""
@@ -179,7 +178,6 @@ class Scanner:
         if not self.errors or self.errors[-1] != (lineno, display_string, message):
             self.errors.append((lineno, display_string, message))
         # print(f"Debug: Recorded error - Line {lineno}: ({display_string}, {message})")
-
 
     def get_next_token(self):
         """
@@ -214,7 +212,7 @@ class Scanner:
                 return token
 
             # Symbols or potential errors
-            elif current_char in tt.SYMBOLS or current_char in ['/','*']:
+            elif current_char in tt.SYMBOLS or current_char in ['/', '*']:
                 token = self._handle_symbol()
                 if token[0] == tt.ERROR:
                     # Error handled (Invalid input, Unmatched comment), loop to continue
@@ -223,10 +221,15 @@ class Scanner:
 
             # --- Error Handling for Invalid Input ---
             else:
+                # Capture any contiguous alphanumeric chars before the bad char
+                start = self.current_pos
                 invalid_char = self._advance()
-                self._record_error(invalid_char, "Invalid input", self.lineno)
+                i = start - 1
+                while i >= 0 and self.buffer[i].isalnum():
+                    i -= 1
+                lexeme = self.buffer[i + 1:self.current_pos]
+                self._record_error(lexeme, "Invalid input", self.lineno)
                 continue
-
 
     def get_errors(self):
         """Returns the list of recorded lexical errors."""
@@ -235,4 +238,3 @@ class Scanner:
     def get_symbol_table(self):
         """Returns the final symbol table."""
         return self.symbol_table
-

@@ -33,7 +33,7 @@ def write_tokens(tokens_by_line, filename="tokens.txt"):
                 else:
                     first_line_written = True
 
-                f.write(f"{lineno}\t{' '.join(token_strings)}")
+                f.write(f"{lineno}.\t{' '.join(token_strings)}")
             if first_line_written:
                 f.write("\n")
 
@@ -44,28 +44,31 @@ def write_tokens(tokens_by_line, filename="tokens.txt"):
 
 def write_errors(errors, filename="lexical_errors.txt"):
     """
-    Writes the lexical errors to the specified file.
-
-    Args:
-        errors (list): A list of (lineno, error_string, message) tuples.
-        filename (str): The name of the output file.
+    Writes the lexical errors to the specified file, grouping multiple errors
+    on the same line into one output line of the form:
+      <lineno>.\t(<lex1>, <msg1>) (<lex2>, <msg2>) …
+    and ensures there is no trailing newline after the last line.
     """
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             if not errors:
-                f.write("There is no lexical error.\n")
-            else:
-                errors.sort(key=lambda x: x[0])
-                first_error_written = False
-                for lineno, error_string, message in errors:
-                    if first_error_written:
-                        f.write("\n")
-                    else:
-                        first_error_written = True
-                    f.write(f"{lineno}\t({error_string}, {message})")
-                if first_error_written:
-                    f.write("\n")
+                f.write("There is no lexical error.")
+                return
 
+            # sort and group
+            errors.sort(key=lambda x: x[0])
+            grouped = {}
+            for lineno, lexeme, msg in errors:
+                grouped.setdefault(lineno, []).append((lexeme, msg))
+
+            lines = sorted(grouped.keys())
+            for idx, lineno in enumerate(lines):
+                f.write(f"{lineno}.\t")
+                pairs = grouped[lineno]
+                for lex, msg in pairs:
+                    f.write(f"({lex}, {msg}) ")
+                if idx < len(lines) - 1:
+                    f.write("\n")
 
     except IOError as e:
         print(f"Error: Could not write errors file '{filename}'. Reason: {e}", file=sys.stderr)
