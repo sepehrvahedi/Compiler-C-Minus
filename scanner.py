@@ -175,9 +175,8 @@ class Scanner:
         else:
             display_string = error_string
 
-        if not self.errors or self.errors[-1] != (lineno, display_string, message):
+        if message == "Unmatched comment" or not self.errors or self.errors[-1] != (lineno, display_string, message):
             self.errors.append((lineno, display_string, message))
-        # print(f"Debug: Recorded error - Line {lineno}: ({display_string}, {message})")
 
     def get_next_token(self):
         """
@@ -225,7 +224,7 @@ class Scanner:
                 start = self.current_pos
                 invalid_char = self._advance()
                 i = start - 1
-                while i >= 0 and self.buffer[i] not in tt.WHITESPACE_CHARS:
+                while i >= 0 and (self.buffer[i].isalnum() or self.buffer[i] == '*'):
                     i -= 1
                 lexeme = self.buffer[i + 1:self.current_pos]
                 self._record_error(lexeme, "Invalid input", self.lineno)
