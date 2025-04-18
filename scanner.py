@@ -225,7 +225,7 @@ class Scanner:
                 start = self.current_pos
                 invalid_char = self._advance()
                 i = start - 1
-                while i >= 0 and self.buffer[i].isalnum():
+                while i >= 0 and self.buffer[i] not in tt.WHITESPACE_CHARS:
                     i -= 1
                 lexeme = self.buffer[i + 1:self.current_pos]
                 self._record_error(lexeme, "Invalid input", self.lineno)
