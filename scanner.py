@@ -115,18 +115,35 @@ class Scanner:
         return (tt.NUM, lexeme)
 
     def _handle_identifier_or_keyword(self):
-        """Recognizes an ID or KEYWORD token."""
+        """
+        Recognizes an ID or KEYWORD token, or treats an identifier
+        followed immediately by a bad char as one INVALID‐INPUT lexeme.
+        """
         start_pos = self.current_pos
+        # consume first letter
         self._advance()
+        # consume letters/digits
         while True:
             char = self._peek()
-            if char is not None and (char.isalnum()):
+            if char is not None and char.isalnum():
                 self._advance()
             else:
                 break
 
         lexeme = self.buffer[start_pos:self.current_pos]
 
+        # If next char is neither whitespace nor a known symbol, it's an invalid suffix.
+        next_char = self._peek()
+        if next_char is not None and \
+                next_char not in tt.WHITESPACE_CHARS and \
+                next_char not in tt.SYMBOLS:
+            # grab that bad char too
+            invalid_char = self._advance()
+            error_lexeme = lexeme + invalid_char
+            self._record_error(error_lexeme, "Invalid input", self.lineno)
+            return (tt.ERROR, error_lexeme)
+
+        # Otherwise it's a normal identifier or keyword
         if lexeme in tt.KEYWORDS:
             return (tt.KEYWORD, lexeme)
         else:
@@ -146,10 +163,19 @@ class Scanner:
             else:
                 return (tt.SYMBOL, '=')
         elif first_char == '*':
-            if self._peek() == '/':
+            next_char = self._peek()
+            # 1) Closing comment “*/”
+            if next_char == '/':
                 self._advance()
                 self._record_error("*/", "Unmatched comment", self.lineno)
                 return (tt.ERROR, "*/")
+            # 2) The *# case: consume both and emit one error token "*#"
+            elif next_char == '#':
+                self._advance()                  # consume the '#'
+                lexeme = "*#"
+                self._record_error(lexeme, "Invalid input", self.lineno)
+                return (tt.ERROR, lexeme)
+            # 3) Otherwise, it’s just the '*' symbol
             else:
                 return (tt.SYMBOL, '*')
         elif first_char == '/':
