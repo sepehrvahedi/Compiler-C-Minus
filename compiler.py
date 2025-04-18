@@ -2,8 +2,10 @@
 # Student ID(s): 99170615, 98170657
 
 import sys
-from scanner import Scanner
+
 import token_types as tt
+from scanner import Scanner
+
 
 def write_tokens(tokens_by_line, filename="tokens.txt"):
     """
@@ -39,6 +41,7 @@ def write_tokens(tokens_by_line, filename="tokens.txt"):
         print(f"Error: Could not write tokens file '{filename}'. Reason: {e}", file=sys.stderr)
         sys.exit(1)
 
+
 def write_errors(errors, filename="lexical_errors.txt"):
     """
     Writes the lexical errors to the specified file.
@@ -68,6 +71,7 @@ def write_errors(errors, filename="lexical_errors.txt"):
         print(f"Error: Could not write errors file '{filename}'. Reason: {e}", file=sys.stderr)
         sys.exit(1)
 
+
 def write_symbol_table(symbol_table, filename="symbol_table.txt"):
     """
     Writes the symbol table (keywords and identifiers) to the specified file.
@@ -84,7 +88,7 @@ def write_symbol_table(symbol_table, filename="symbol_table.txt"):
                     f.write("\n")
                 else:
                     first_entry_written = True
-                f.write(f"{i+1}.\t{lexeme}")
+                f.write(f"{i + 1}.\t{lexeme}")
             if first_entry_written:
                 f.write("\n")
 
@@ -92,12 +96,8 @@ def write_symbol_table(symbol_table, filename="symbol_table.txt"):
         print(f"Error: Could not write symbol table file '{filename}'. Reason: {e}", file=sys.stderr)
         sys.exit(1)
 
+
 def main():
-    """
-    Main execution function for the scanner phase.
-    Reads input.txt, scans it, and writes tokens.txt, lexical_errors.txt,
-    and symbol_table.txt.
-    """
     input_filename = "input.txt"
     tokens_filename = "tokens.txt"
     errors_filename = "lexical_errors.txt"
@@ -109,7 +109,7 @@ def main():
     except FileNotFoundError:
         print(f"Error: Input file '{input_filename}' not found.", file=sys.stderr)
         open(tokens_filename, 'w').close()
-        open(errors_filename, 'w').write("There is no lexical error.\n")
+        open(errors_filename, 'w').write("There is no lexical error.")
         open(symbol_table_filename, 'w').close()
         sys.exit(1)
     except IOError as e:
@@ -123,41 +123,30 @@ def main():
     last_token_line = 0
 
     while True:
+        token_type, token_lexeme = scanner.get_next_token()
         token_start_line = scanner.lineno
 
-        token_type, token_lexeme = scanner.get_next_token()
-
-        # Skip COMMENT and WHITESPACE tokens as they are not recorded
         if token_type == tt.COMMENT or token_type == tt.WHITESPACE or token_type == tt.ERROR:
-            pass
+            continue
 
-        elif token_type == tt.EOF:
+        if token_type == tt.EOF:
             if current_line_tokens:
-                if last_token_line not in tokens_by_line:
-                    tokens_by_line[last_token_line] = []
-                tokens_by_line[last_token_line].extend(current_line_tokens)
+                tokens_by_line.setdefault(last_token_line, []).extend(current_line_tokens)
             break
 
         # Process valid tokens
-        else:
-            if token_start_line != last_token_line:
-                if current_line_tokens:
-                    if last_token_line not in tokens_by_line:
-                        tokens_by_line[last_token_line] = []
-                    tokens_by_line[last_token_line].extend(current_line_tokens)
+        # When we hit a new line, flush previous line's tokens
+        if token_start_line != last_token_line:
+            if current_line_tokens:
+                tokens_by_line.setdefault(last_token_line, []).extend(current_line_tokens)
+            current_line_tokens = []
+            last_token_line = token_start_line
 
-                current_line_tokens = []
-                last_token_line = token_start_line
-
-            current_line_tokens.append((token_type, token_lexeme))
-
-
-    lexical_errors = scanner.get_errors()
-    symbol_table = scanner.get_symbol_table()
+        current_line_tokens.append((token_type, token_lexeme))
 
     write_tokens(tokens_by_line, tokens_filename)
-    write_errors(lexical_errors, errors_filename)
-    write_symbol_table(symbol_table, symbol_table_filename)
+    write_errors(scanner.get_errors(), errors_filename)
+    write_symbol_table(scanner.get_symbol_table(), symbol_table_filename)
 
 
 if __name__ == "__main__":
