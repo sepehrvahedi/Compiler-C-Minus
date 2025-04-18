@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/lexical_errors.txt
+/tokens.txt
+/symbol_table.txt
+/test_cases/
