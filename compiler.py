@@ -2,155 +2,115 @@
 # Student ID(s): 99170615, 98170657
 
 import sys
-
-import token_types as tt
+import os
+import argparse
 from scanner import Scanner
+from parser import Parser
 
-
-def write_tokens(tokens_by_line, filename="tokens.txt"):
-    """
-    Writes the recognized tokens to the specified file, grouped by line number.
-
-    Args:
-        tokens_by_line (dict): A dictionary mapping line numbers to lists of (Type, Lexeme) tuples.
-        filename (str): The name of the output file.
-    """
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            if not tokens_by_line:
-                f.write("")
-                return
-
-            sorted_lines = sorted(tokens_by_line.keys())
-
-            first_line_written = False
-            for lineno in sorted_lines:
-                token_pairs = tokens_by_line[lineno]
-                token_strings = [f"({token[0]}, {token[1]})" for token in token_pairs]
-
-                if first_line_written:
-                    f.write("\n")
-                else:
-                    first_line_written = True
-
-                f.write(f"{lineno}.\t{' '.join(token_strings)}")
-            if first_line_written:
-                f.write("\n")
-
-    except IOError as e:
-        print(f"Error: Could not write tokens file '{filename}'. Reason: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def write_errors(errors, filename="lexical_errors.txt"):
-    """
-    Writes the lexical errors to the specified file, grouping multiple errors
-    on the same line into one output line of the form:
-      <lineno>.\t(<lex1>, <msg1>) (<lex2>, <msg2>) …
-    and ensures there is no trailing newline after the last line.
-    """
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            if not errors:
-                f.write("There is no lexical error.")
-                return
-
-            # sort and group
-            errors.sort(key=lambda x: x[0])
-            grouped = {}
-            for lineno, lexeme, msg in errors:
-                grouped.setdefault(lineno, []).append((lexeme, msg))
-
-            lines = sorted(grouped.keys())
-            for idx, lineno in enumerate(lines):
-                f.write(f"{lineno}.\t")
-                pairs = grouped[lineno]
-                for lex, msg in pairs:
-                    f.write(f"({lex}, {msg}) ")
-                if idx < len(lines) - 1:
-                    f.write("\n")
-
-    except IOError as e:
-        print(f"Error: Could not write errors file '{filename}'. Reason: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def write_symbol_table(symbol_table, filename="symbol_table.txt"):
-    """
-    Writes the symbol table (keywords and identifiers) to the specified file.
-
-    Args:
-        symbol_table (list): A list of lexemes (keywords and identifiers).
-        filename (str): The name of the output file.
-    """
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            first_entry_written = False
-            for i, lexeme in enumerate(symbol_table):
-                if first_entry_written:
-                    f.write("\n")
-                else:
-                    first_entry_written = True
-                f.write(f"{i + 1}.\t{lexeme}")
-            if first_entry_written:
-                f.write("\n")
-
-    except IOError as e:
-        print(f"Error: Could not write symbol table file '{filename}'. Reason: {e}", file=sys.stderr)
-        sys.exit(1)
-
+class Token:
+    """Simple token class to store token information."""
+    def __init__(self, token_type, lexeme, lineno):
+        self.token_type = token_type
+        self.lexeme = lexeme
+        self.lineno = lineno
 
 def main():
-    input_filename = "input.txt"
-    tokens_filename = "tokens.txt"
-    errors_filename = "lexical_errors.txt"
-    symbol_table_filename = "symbol_table.txt"
+    """Main entry point for the compiler."""
+    # Parse command-line arguments
+    arg_parser = argparse.ArgumentParser(description='C-minus Compiler')
+    arg_parser.add_argument('input_file', type=str, help='Path to the input source file')
+    arg_parser.add_argument('--output-dir', type=str, default='.', help='Directory for output files')
+    arg_parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    args = arg_parser.parse_args()
 
+    # Check if input file exists
+    if not os.path.exists(args.input_file):
+        print(f"Error: Input file '{args.input_file}' does not exist.")
+        return 1
+
+    # Create output directory if it doesn't exist
+    if not os.path.exists(args.output_dir):
+        try:
+            os.makedirs(args.output_dir)
+        except OSError as e:
+            print(f"Error: Could not create output directory '{args.output_dir}'. Reason: {e}")
+            return 1
+
+    # Read input file
     try:
-        with open(input_filename, 'r', encoding='utf-8') as f:
-            input_text = f.read()
-    except FileNotFoundError:
-        print(f"Error: Input file '{input_filename}' not found.", file=sys.stderr)
-        open(tokens_filename, 'w').close()
-        open(errors_filename, 'w').write("There is no lexical error.")
-        open(symbol_table_filename, 'w').close()
-        sys.exit(1)
+        with open(args.input_file, 'r', encoding='utf-8') as f:
+            source_code = f.read()
     except IOError as e:
-        print(f"Error: Could not read input file '{input_filename}'. Reason: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Error: Could not read input file '{args.input_file}'. Reason: {e}")
+        return 1
 
-    scanner = Scanner(input_text)
+    # Get base filename (without extension)
+    base_filename = os.path.splitext(os.path.basename(args.input_file))[0]
 
-    tokens_by_line = {}
-    current_line_tokens = []
-    last_token_line = 0
+    # Step 1: Lexical Analysis
+    if args.verbose:
+        print("Starting lexical analysis...")
 
+    scanner = Scanner(source_code)
+    tokens = []
+
+    # Collect all tokens from the scanner
     while True:
-        token_type, token_lexeme = scanner.get_next_token()
-        token_start_line = scanner.lineno
-
-        if token_type == tt.COMMENT or token_type == tt.WHITESPACE or token_type == tt.ERROR:
-            continue
-
-        if token_type == tt.EOF:
-            if current_line_tokens:
-                tokens_by_line.setdefault(last_token_line, []).extend(current_line_tokens)
+        token_type, lexeme = scanner.get_next_token()
+        tokens.append(Token(token_type, lexeme, scanner.lineno))
+        if token_type == 'EOF':
             break
 
-        # Process valid tokens
-        # When we hit a new line, flush previous line's tokens
-        if token_start_line != last_token_line:
-            if current_line_tokens:
-                tokens_by_line.setdefault(last_token_line, []).extend(current_line_tokens)
-            current_line_tokens = []
-            last_token_line = token_start_line
+    # Write tokens to file
+    tokens_filename = os.path.join(args.output_dir, f"{base_filename}_tokens.txt")
+    try:
+        with open(tokens_filename, 'w', encoding='utf-8') as f:
+            for token in tokens:
+                if token.token_type == 'EOF':
+                    continue
+                f.write(f"{token.lineno}:\t({token.token_type}, {token.lexeme})\n")
+    except IOError as e:
+        print(f"Error: Could not write tokens to file '{tokens_filename}'. Reason: {e}")
 
-        current_line_tokens.append((token_type, token_lexeme))
+    # Write lexical errors to file
+    lexical_errors_filename = os.path.join(args.output_dir, f"{base_filename}_lexical_errors.txt")
+    try:
+        with open(lexical_errors_filename, 'w', encoding='utf-8') as f:
+            if not scanner.errors:
+                f.write("There is no lexical error.\n")
+            else:
+                for error in scanner.errors:
+                    lineno, lexeme, message = error
+                    f.write(f"{lineno}:\t({lexeme}, {message})\n")
+    except IOError as e:
+        print(f"Error: Could not write lexical errors to file '{lexical_errors_filename}'. Reason: {e}")
 
-    write_tokens(tokens_by_line, tokens_filename)
-    write_errors(scanner.get_errors(), errors_filename)
-    write_symbol_table(scanner.get_symbol_table(), symbol_table_filename)
+    if args.verbose:
+        print(f"Lexical analysis completed. Found {len(tokens)} tokens and {len(scanner.errors)} errors.")
+        print(f"Tokens written to '{tokens_filename}'")
+        print(f"Lexical errors written to '{lexical_errors_filename}'")
 
+    # Step 2: Syntax Analysis
+    if args.verbose:
+        print("Starting syntax analysis...")
+
+    parser = Parser(tokens)
+    parser.parse()
+
+    # Write parse tree to file
+    parse_tree_filename = os.path.join(args.output_dir, f"{base_filename}_parse_tree.txt")
+    parser.write_parse_tree(parse_tree_filename)
+
+    # Write syntax errors to file
+    syntax_errors_filename = os.path.join(args.output_dir, f"{base_filename}_syntax_errors.txt")
+    parser.write_syntax_errors(syntax_errors_filename)
+
+    if args.verbose:
+        print(f"Syntax analysis completed. Found {len(parser.errors)} errors.")
+        print(f"Parse tree written to '{parse_tree_filename}'")
+        print(f"Syntax errors written to '{syntax_errors_filename}'")
+
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
