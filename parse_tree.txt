@@ -3,36 +3,36 @@
     │   ├── Declaration
     │   │   ├── DeclarationInitial
     │   │   │   ├── TypeSpecifier
-    │   │   │   │   └── (int, int)
+    │   │   │   │   └── (KEYWORD, int)
     │   │   │   └── (ID, add)
     │   │   └── DeclarationPrime
     │   │       └── FunDeclarationPrime
-    │   │           ├── ((, ()
+    │   │           ├── (SYMBOL, ()
     │   │           ├── Params
-    │   │           │   ├── (int, int)
+    │   │           │   ├── (KEYWORD, int)
     │   │           │   ├── (ID, a)
     │   │           │   ├── ParamPrime
     │   │           │   │   └── epsilon
     │   │           │   └── ParamList
-    │   │           │       ├── (,, ,)
+    │   │           │       ├── (SYMBOL, ,)
     │   │           │       ├── Param
     │   │           │       │   ├── DeclarationInitial
     │   │           │       │   │   ├── TypeSpecifier
-    │   │           │       │   │   │   └── (int, int)
+    │   │           │       │   │   │   └── (KEYWORD, int)
     │   │           │       │   │   └── (ID, b)
     │   │           │       │   └── ParamPrime
     │   │           │       │       └── epsilon
     │   │           │       └── ParamList
     │   │           │           └── epsilon
-    │   │           ├── (), ))
+    │   │           ├── (SYMBOL, ))
     │   │           └── CompoundStmt
-    │   │               ├── ({, {)
+    │   │               ├── (SYMBOL, {)
     │   │               ├── DeclarationList
     │   │               │   └── epsilon
     │   │               ├── StatementList
     │   │               │   ├── Statement
     │   │               │   │   └── ReturnStmt
-    │   │               │   │       ├── (return, return)
+    │   │               │   │       ├── (KEYWORD, return)
     │   │               │   │       └── ReturnStmtPrime
     │   │               │   │           ├── Expression
     │   │               │   │           │   ├── (ID, a)
@@ -48,7 +48,7 @@
     │   │               │   │           │           │   │       └── epsilon
     │   │               │   │           │           │   └── D
     │   │               │   │           │           │       ├── Addop
-    │   │               │   │           │           │       │   └── (+, +)
+    │   │               │   │           │           │       │   └── (SYMBOL, +)
     │   │               │   │           │           │       ├── Term
     │   │               │   │           │           │       │   ├── SignedFactor
     │   │               │   │           │           │       │   │   └── Factor
@@ -62,33 +62,33 @@
     │   │               │   │           │           │           └── epsilon
     │   │               │   │           │           └── C
     │   │               │   │           │               └── epsilon
-    │   │               │   │           └── (;, ;)
+    │   │               │   │           └── (SYMBOL, ;)
     │   │               │   └── StatementList
     │   │               │       └── epsilon
-    │   │               └── (}, })
+    │   │               └── (SYMBOL, })
     │   └── DeclarationList
     │       ├── Declaration
     │       │   ├── DeclarationInitial
     │       │   │   ├── TypeSpecifier
-    │       │   │   │   └── (void, void)
+    │       │   │   │   └── (KEYWORD, void)
     │       │   │   └── (ID, main)
     │       │   └── DeclarationPrime
     │       │       └── FunDeclarationPrime
-    │       │           ├── ((, ()
+    │       │           ├── (SYMBOL, ()
     │       │           ├── Params
-    │       │           │   └── (void, void)
-    │       │           ├── (), ))
+    │       │           │   └── (KEYWORD, void)
+    │       │           ├── (SYMBOL, ))
     │       │           └── CompoundStmt
-    │       │               ├── ({, {)
+    │       │               ├── (SYMBOL, {)
     │       │               ├── DeclarationList
     │       │               │   ├── Declaration
     │       │               │   │   ├── DeclarationInitial
     │       │               │   │   │   ├── TypeSpecifier
-    │       │               │   │   │   │   └── (int, int)
+    │       │               │   │   │   │   └── (KEYWORD, int)
     │       │               │   │   │   └── (ID, result)
     │       │               │   │   └── DeclarationPrime
     │       │               │   │       └── VarDeclarationPrime
-    │       │               │   │           └── (;, ;)
+    │       │               │   │           └── (SYMBOL, ;)
     │       │               │   └── DeclarationList
     │       │               │       └── epsilon
     │       │               ├── StatementList
@@ -97,7 +97,7 @@
     │       │               │   │       ├── Expression
     │       │               │   │       │   ├── (ID, result)
     │       │               │   │       │   └── B
-    │       │               │   │       │       ├── (=, =)
+    │       │               │   │       │       ├── (SYMBOL, =)
     │       │               │   │       │       └── Expression
     │       │               │   │       │           ├── (ID, add)
     │       │               │   │       │           └── B
@@ -106,7 +106,7 @@
     │       │               │   │       │                   │   ├── TermPrime
     │       │               │   │       │                   │   │   ├── SignedFactorPrime
     │       │               │   │       │                   │   │   │   └── FactorPrime
-    │       │               │   │       │                   │   │   │       ├── ((, ()
+    │       │               │   │       │                   │   │   │       ├── (SYMBOL, ()
     │       │               │   │       │                   │   │   │       ├── Args
     │       │               │   │       │                   │   │   │       │   └── ArgList
     │       │               │   │       │                   │   │   │       │       ├── Expression
@@ -123,7 +123,7 @@
     │       │               │   │       │                   │   │   │       │       │       └── C
     │       │               │   │       │                   │   │   │       │       │           └── epsilon
     │       │               │   │       │                   │   │   │       │       └── ArgListPrime
-    │       │               │   │       │                   │   │   │       │           ├── (,, ,)
+    │       │               │   │       │                   │   │   │       │           ├── (SYMBOL, ,)
     │       │               │   │       │                   │   │   │       │           ├── Expression
     │       │               │   │       │                   │   │   │       │           │   └── SimpleExpressionZegond
     │       │               │   │       │                   │   │   │       │           │       ├── AdditiveExpressionZegond
@@ -139,17 +139,17 @@
     │       │               │   │       │                   │   │   │       │           │           └── epsilon
     │       │               │   │       │                   │   │   │       │           └── ArgListPrime
     │       │               │   │       │                   │   │   │       │               └── epsilon
-    │       │               │   │       │                   │   │   │       └── (), ))
+    │       │               │   │       │                   │   │   │       └── (SYMBOL, ))
     │       │               │   │       │                   │   │   └── G
     │       │               │   │       │                   │   │       └── epsilon
     │       │               │   │       │                   │   └── D
     │       │               │   │       │                   │       └── epsilon
     │       │               │   │       │                   └── C
     │       │               │   │       │                       └── epsilon
-    │       │               │   │       └── (;, ;)
+    │       │               │   │       └── (SYMBOL, ;)
     │       │               │   └── StatementList
     │       │               │       └── epsilon
-    │       │               └── (}, })
+    │       │               └── (SYMBOL, })
     │       └── DeclarationList
     │           └── epsilon
     └── $

@@ -87,7 +87,7 @@ class Parser:
             A Node representing the matched token, or None if there was an error.
         """
         if self.current_token == expected_token:
-            matched_node = Node(self.current_token, is_terminal=True, lexeme=self.current_lexeme)
+            matched_node = Node(self.current_token_type, is_terminal=True, lexeme=self.current_lexeme)
             self.get_next_token()
             return matched_node
         else:
