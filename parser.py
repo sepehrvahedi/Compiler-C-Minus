@@ -1132,24 +1132,20 @@ class Parser:
         return node
 
     def var_prime(self):
-        """VarPrime -> [ Expression ] | EPSILON"""
         node = Node('VarPrime')
 
         if self.check_predict_set('VarPrime', 1):  # [ Expression ]
             left_bracket_node = self.match('[')
-            if left_bracket_node:
-                node.add_child(left_bracket_node)
+            node.add_child(left_bracket_node)
 
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
+            expression_node = self.expression()
+            node.add_child(expression_node)
 
-                    right_bracket_node = self.match(']')
-                    if right_bracket_node:
-                        node.add_child(right_bracket_node)
+            right_bracket_node = self.match(']')
+            node.add_child(right_bracket_node)
 
-        elif self.check_predict_set('VarPrime', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
+        elif self.current_lexeme in FOLLOW['VarPrime']:  # epsilon production
+            node.add_child(Node('epsilon', is_terminal=True))
 
         else:
             self.handle_error()
