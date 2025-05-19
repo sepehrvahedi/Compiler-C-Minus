@@ -149,18 +149,28 @@ class Parser:
         except IOError as e:
             print(f"Error: Could not write syntax errors to file '{filename}'. Reason: {e}")
 
-    def _print_node(self, node, prefix=""):
-        """Helper method to print a node and its children for the parse tree."""
+    def _print_node(self, node, prefix="", is_last=True):
+        """
+        Helper method to recursively print a parse tree node and its children,
+        using ├── and └── with proper vertical lines and indentation.
+        """
         if not node:
             return ""
 
-        result = f"{prefix}{node}\n"
+        connector = "└── " if is_last else "├── "
+        result = f"{prefix}{connector}{node}\n"
 
+        # Prepare prefix for children:
+        # If this node is last child, add spaces; else add vertical bar
+        if is_last:
+            new_prefix = prefix + "    "
+        else:
+            new_prefix = prefix + "│   "
+
+        child_count = len(node.children)
         for i, child in enumerate(node.children):
-            if i == len(node.children) - 1:  # Last child
-                result += self._print_node(child, prefix + "└── ")
-            else:
-                result += self._print_node(child, prefix + "├── ")
+            last_child = (i == child_count - 1)
+            result += self._print_node(child, new_prefix, last_child)
 
         return result
 

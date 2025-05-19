@@ -1,5 +1,9 @@
 
+int add(int a, int b) {
+    return a + b;
+}
+
 void main(void) {
-    int x;
-    x = 10;
+    int result;
+    result = add(3, 7);
 }
