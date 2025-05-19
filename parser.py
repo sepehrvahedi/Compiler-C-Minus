@@ -149,19 +149,27 @@ class Parser:
         except IOError as e:
             print(f"Error: Could not write syntax errors to file '{filename}'. Reason: {e}")
 
-    def _print_node(self, node, prefix="", is_last=True):
+    def _print_node(self, node, prefix="", is_last=True, is_root=True):
         """
         Helper method to recursively print a parse tree node and its children,
         using ├── and └── with proper vertical lines and indentation.
         """
+
         if not node:
             return ""
-        connector = "└── " if is_last else "├── "
-        result = f"{prefix}{connector}{node}\n"
+
+        if is_root:
+            # For root, no connector prefix
+            result = f"{node}\n"
+        else:
+            connector = "└── " if is_last else "├── "
+            result = f"{prefix}{connector}{node}\n"
 
         # Prepare prefix for children:
         # If this node is last child, add spaces; else add vertical bar
-        if is_last:
+        if is_root:
+            new_prefix = ""
+        elif is_last:
             new_prefix = prefix + "    "
         else:
             new_prefix = prefix + "│   "
@@ -169,7 +177,7 @@ class Parser:
         child_count = len(node.children)
         for i, child in enumerate(node.children):
             last_child = (i == child_count - 1)
-            result += self._print_node(child, new_prefix, last_child)
+            result += self._print_node(child, new_prefix, last_child, is_root=False)
 
         return result
 
@@ -1024,12 +1032,11 @@ class Parser:
         return node
 
     def signed_factor_prime(self):
-        """SignedFactorPrime -> FactorPrime"""
         node = Node('SignedFactorPrime')
 
+        # Always call factor_prime (there is no other alternative)
         factor_prime_node = self.factor_prime()
-        if factor_prime_node:
-            node.add_child(factor_prime_node)
+        node.add_child(factor_prime_node)
 
         return node
 
@@ -1154,26 +1161,25 @@ class Parser:
         return node
 
     def factor_prime(self):
-        """FactorPrime -> ( Args ) | VarPrime"""
+        """FactorPrime -> ( Args ) | VarPrime | EPSILON"""
         node = Node('FactorPrime')
 
         if self.check_predict_set('FactorPrime', 1):  # ( Args )
             left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
+            node.add_child(left_paren_node)
 
-                args_node = self.args()
-                if args_node:
-                    node.add_child(args_node)
+            args_node = self.args()
+            node.add_child(args_node)
 
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
+            right_paren_node = self.match(')')
+            node.add_child(right_paren_node)
 
         elif self.check_predict_set('FactorPrime', 2):  # VarPrime
             var_prime_node = self.var_prime()
-            if var_prime_node:
-                node.add_child(var_prime_node)
+            node.add_child(var_prime_node)
+
+        elif self.current_lexeme in FOLLOW['FactorPrime']:  # EPSILON
+            node.add_child(Node('epsilon', is_terminal=True))
 
         else:
             self.handle_error()
