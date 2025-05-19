@@ -98,11 +98,11 @@ def main():
     parser.parse()
 
     # Write parse tree to file
-    parse_tree_filename = os.path.join(args.output_dir, f"{base_filename}_parse_tree.txt")
+    parse_tree_filename = os.path.join(args.output_dir, f"parse_tree.txt")
     parser.write_parse_tree(parse_tree_filename)
 
     # Write syntax errors to file
-    syntax_errors_filename = os.path.join(args.output_dir, f"{base_filename}_syntax_errors.txt")
+    syntax_errors_filename = os.path.join(args.output_dir, f"syntax_errors.txt")
     parser.write_syntax_errors(syntax_errors_filename)
 
     if args.verbose:
