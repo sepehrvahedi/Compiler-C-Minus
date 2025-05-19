@@ -156,7 +156,6 @@ class Parser:
         """
         if not node:
             return ""
-
         connector = "└── " if is_last else "├── "
         result = f"{prefix}{connector}{node}\n"
 

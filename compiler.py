@@ -73,7 +73,7 @@ def main():
         print(f"Error: Could not write tokens to file '{tokens_filename}'. Reason: {e}")
 
     # Write lexical errors to file
-    lexical_errors_filename = os.path.join(args.output_dir, f"{base_filename}_lexical_errors.txt")
+    lexical_errors_filename = os.path.join(args.output_dir, f"lexical_errors.txt")
     try:
         with open(lexical_errors_filename, 'w', encoding='utf-8') as f:
             if not scanner.errors:
