@@ -84,10 +84,10 @@ Program
 │   │               │       │               ├── StatementList
 │   │               │       │               │   ├── Statement
 │   │               │       │               │   │   └── SelectionStmt
-│   │               │       │               │   │       ├── (KEYWORD, if) 
-│   │               │       │               │   │       ├── (SYMBOL, () 
+│   │               │       │               │   │       ├── (KEYWORD, if)
+│   │               │       │               │   │       ├── (SYMBOL, ()
 │   │               │       │               │   │       ├── Expression
-│   │               │       │               │   │       │   ├── (ID, x) 
+│   │               │       │               │   │       │   ├── (ID, x)
 │   │               │       │               │   │       │   └── B
 │   │               │       │               │   │       │       └── SimpleExpressionPrime
 │   │               │       │               │   │       │           ├── AdditiveExpressionPrime
@@ -101,21 +101,21 @@ Program
 │   │               │       │               │   │       │           │       └── epsilon
 │   │               │       │               │   │       │           └── C
 │   │               │       │               │   │       │               ├── Relop
-│   │               │       │               │   │       │               │   └── (SYMBOL, ==) 
+│   │               │       │               │   │       │               │   └── (SYMBOL, ==)
 │   │               │       │               │   │       │               └── AdditiveExpression
 │   │               │       │               │   │       │                   ├── Term
 │   │               │       │               │   │       │                   │   ├── SignedFactor
 │   │               │       │               │   │       │                   │   │   └── Factor
-│   │               │       │               │   │       │                   │   │       └── (NUM, 5) 
+│   │               │       │               │   │       │                   │   │       └── (NUM, 5)
 │   │               │       │               │   │       │                   │   └── G
 │   │               │       │               │   │       │                   │       └── epsilon
 │   │               │       │               │   │       │                   └── D
 │   │               │       │               │   │       │                       └── epsilon
-│   │               │       │               │   │       ├── (SYMBOL, )) 
+│   │               │       │               │   │       ├── (SYMBOL, ))
 │   │               │       │               │   │       ├── Statement
 │   │               │       │               │   │       │   └── ExpressionStmt
-│   │               │       │               │   │       │       ├── (KEYWORD, break) 
-│   │               │       │               │   │       │       └── (SYMBOL, ;) 
+│   │               │       │               │   │       │       ├── (KEYWORD, break)
+│   │               │       │               │   │       │       └── (SYMBOL, ;)
 │   │               │       │               │   │       └── Statement
 │   │               │       │               │   │           └── ExpressionStmt
 │   │               │       │               │   │               ├── Expression

@@ -18,7 +18,7 @@ def main():
     """Main entry point for the compiler."""
     # Parse command-line arguments
     arg_parser = argparse.ArgumentParser(description='C-minus Compiler')
-    arg_parser.add_argument('input_file', type=str, help='Path to the input source file')
+    arg_parser.add_argument('--input-file', type=str, default='./input.txt', help='Path to the input source file')
     arg_parser.add_argument('--output-dir', type=str, default='.', help='Directory for output files')
     arg_parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = arg_parser.parse_args()
