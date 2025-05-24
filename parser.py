@@ -145,7 +145,22 @@ class Parser:
                     f.write("There is no syntax error.")
                 else:
                     for line, column, message in self.errors:
-                        f.write(f"{line}: {message}\n")
+                        # Format: #<line> : syntax error, <message>
+                        # Convert message format
+                        if message.startswith("Missing '"):
+                            # Extract the token from "Missing 'token'"
+                            token = message[9:-1]  # Remove "Missing '" and "'"
+                            formatted_message = f"missing {token}"
+                        elif message.startswith("Unexpected '"):
+                            # Extract the token from "Unexpected 'token'"
+                            token = message[12:-1]  # Remove "Unexpected '" and "'"
+                            formatted_message = f"illegal {token}"
+                        elif message == "Unexpected EOF":
+                            formatted_message = "unexpected EOF"
+                        else:
+                            formatted_message = message.lower()
+
+                        f.write(f"#{line} : syntax error, {formatted_message}\n")
         except IOError as e:
             print(f"Error: Could not write syntax errors to file '{filename}'. Reason: {e}")
 
