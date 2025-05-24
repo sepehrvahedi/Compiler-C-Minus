@@ -579,35 +579,54 @@ class Parser:
 
     def selection_stmt(self):
         """SelectionStmt -> if ( Expression ) Statement else Statement"""
-        node = Node('SelectionStmt')
+        node = Node("SelectionStmt")
 
-        if_node = self.match('if')
-        if if_node:
-            node.add_child(if_node)
+        # Match 'if'
+        if self.current_token == 'if':
+            if_node = self.match('if')
+            if if_node:
+                node.add_child(if_node)
+        else:
+            self.handle_error('if')
 
-            left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
+        # Match '('
+        if self.current_token == '(':
+            lparen_node = self.match('(')
+            if lparen_node:
+                node.add_child(lparen_node)
+        else:
+            self.handle_error('(')
 
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
+        # Parse Expression
+        expr_node = self.expression()
+        if expr_node:
+            node.add_child(expr_node)
 
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
+        # Match ')'
+        if self.current_token == ')':
+            rparen_node = self.match(')')
+            if rparen_node:
+                node.add_child(rparen_node)
+        else:
+            self.handle_error(')')
 
-                        statement_node = self.statement()
-                        if statement_node:
-                            node.add_child(statement_node)
+        # Parse first Statement
+        stmt1_node = self.statement()
+        if stmt1_node:
+            node.add_child(stmt1_node)
 
-                            else_node = self.match('else')
-                            if else_node:
-                                node.add_child(else_node)
+        # Match 'else'
+        if self.current_token == 'else':
+            else_node = self.match('else')
+            if else_node:
+                node.add_child(else_node)
+        else:
+            self.handle_error('else')
 
-                                statement_node2 = self.statement()
-                                if statement_node2:
-                                    node.add_child(statement_node2)
+        # Parse second Statement
+        stmt2_node = self.statement()
+        if stmt2_node:
+            node.add_child(stmt2_node)
 
         return node
 
