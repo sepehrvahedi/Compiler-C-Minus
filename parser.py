@@ -1,1338 +1,527 @@
-# Author(s): Sepehr Vahedi, Helia Akhtarkavian
-# Student ID(s): 99170615, 98170657
+# Sepehr Vahedi
+# 99170615
 
-from grammar import FOLLOW, PREDICT
+from enum import Enum
+from types import DynamicClassAttribute
 
-class Node:
-    """Represents a node in the parse tree."""
-    def __init__(self, name, is_terminal=False, lexeme=None):
-        self.name = name
-        self.is_terminal = is_terminal
-        self.lexeme = lexeme
-        self.children = []
+from anytree import Node
 
-    def add_child(self, node):
-        """Add a child node to this node."""
-        self.children.append(node)
+from symbols import ActionSymbols, CheckSymbols
+from lexer import Lexer
+from intermediate_code_generator.expression_processor import CodeGenerator
 
-    def __str__(self):
-        """String representation for a node in the parse tree."""
-        if self.is_terminal:
-            if self.name == 'EPSILON':
-                return 'epsilon'
-            if self.name == '$':
-                return '$'
-            if self.lexeme:
-                return f"({self.name}, {self.lexeme})"
-            return self.name
-        return self.name
 
 
 class Parser:
-    def __init__(self, tokens):
-        """
-        Initialize the parser with tokens.
+    def __init__(self, lexer: Lexer, code_generator: CodeGenerator):
+        self.lexer = lexer
+        self.code_generator = code_generator
+        self.__current_token = None
+        self.__lookahead = None
+        self.node = Node(start_symbol.name)
+        self.stack = [start_symbol]
+        create_parsing_table()
 
-        Args:
-            tokens: A list of Token objects from the scanner.
-        """
-        self.tokens = tokens
-        self.token_index = 0
-        self.current_token = None
-        self.current_token_type = None
-        self.current_lexeme = None
-        self.tokens_processed = 0
-        self.errors = []
-        self.parse_tree = None
-        self.get_next_token()  # Initialize with the first token
-
-    def get_next_token(self):
-        """Get the next token from the token list."""
-        if self.token_index < len(self.tokens):
-            token = self.tokens[self.token_index]
-            self.token_index += 1
-
-            # Skip comment and whitespace tokens
-            while (self.token_index < len(self.tokens) and
-                   (token.token_type == 'COMMENT' or token.token_type == 'WHITESPACE' or token.token_type == 'ERROR')):
-                token = self.tokens[self.token_index]
-                self.token_index += 1
-
-            self.current_token_type = token.token_type
-            self.current_lexeme = token.lexeme
-
-            # Determine the current token based on its type
-            if self.current_token_type in ['KEYWORD', 'SYMBOL']:
-                self.current_token = self.current_lexeme
-            else:
-                self.current_token = self.current_token_type
-
-            self.tokens_processed += 1
-            return self.current_token, self.current_lexeme
+    def __get_token(self):
+        self.__current_token = self.lexer.get_next_token()
+        if self.__current_token.type in ['KEYWORD', 'SYMBOL', 'END']:
+            la = self.__current_token.lexeme
         else:
-            # End of tokens
-            self.current_token = 'EOF'
-            self.current_lexeme = ''
-            self.current_token_type = 'EOF'
-            return 'EOF', ''
-
-    def match(self, expected_token):
-        """
-        Match the current token with the expected token.
-
-        Args:
-            expected_token: The expected token type or value.
-
-        Returns:
-            A Node representing the matched token, or None if there was an error.
-        """
-        if self.current_token == expected_token:
-            matched_node = Node(self.current_token_type, is_terminal=True, lexeme=self.current_lexeme)
-            self.get_next_token()
-            return matched_node
-        else:
-            # Error handling: unexpected token
-            self.handle_error(expected_token)
-            return None
-
-    def handle_error(self, expected_token=None):
-        """
-        Handle a syntax error using Panic Mode recovery.
-
-        Args:
-            expected_token: The expected token if available.
-        """
-        # Use the line number from the token if available
-        if self.token_index > 0 and self.token_index <= len(self.tokens):
-            lineno = self.tokens[self.token_index-1].lineno
-        else:
-            lineno = 0
-
-        column = 0  # We don't have column information in the token
-
-        if self.current_token == 'EOF':
-            error_message = f"Unexpected EOF"
-        elif expected_token:
-            error_message = f"Missing '{expected_token}'"
-        else:
-            error_message = f"Unexpected '{self.current_lexeme}'"
-
-        self.errors.append((lineno, column, error_message))
-
-    def skip_to_synchronizing_set(self, sync_set):
-        """
-        Skip tokens until a token in the synchronizing set is encountered.
-
-        Args:
-            sync_set: A set of tokens to synchronize on.
-        """
-        while self.current_token != 'EOF' and self.current_token not in sync_set:
-            self.get_next_token()
-
-    def write_parse_tree(self, filename):
-        """Write the parse tree to a file."""
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(self._print_node(self.parse_tree))
-        except IOError as e:
-            print(f"Error: Could not write parse tree to file '{filename}'. Reason: {e}")
-
-    def write_syntax_errors(self, filename):
-        """Write syntax errors to a file."""
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                if not self.errors:
-                    f.write("There is no syntax error.")
-                else:
-                    for line, column, message in self.errors:
-                        # Format: #<line> : syntax error, <message>
-                        # Convert message format
-                        if message.startswith("Missing '"):
-                            # Extract the token from "Missing 'token'"
-                            token = message[9:-1]  # Remove "Missing '" and "'"
-                            formatted_message = f"missing {token}"
-                        elif message.startswith("Unexpected '"):
-                            # Extract the token from "Unexpected 'token'"
-                            token = message[12:-1]  # Remove "Unexpected '" and "'"
-                            formatted_message = f"illegal {token}"
-                        elif message == "Unexpected EOF":
-                            formatted_message = "unexpected EOF"
-                        else:
-                            formatted_message = message.lower()
-
-                        f.write(f"#{line} : syntax error, {formatted_message}\n")
-        except IOError as e:
-            print(f"Error: Could not write syntax errors to file '{filename}'. Reason: {e}")
-
-    def _print_node(self, node, prefix="", is_last=True, is_root=True):
-        """
-        Helper method to recursively print a parse tree node and its children,
-        using ├── and └── with proper vertical lines and indentation.
-        """
-
-        if not node:
-            return ""
-
-        if is_root:
-            # For root, no connector prefix
-            result = f"{node}\n"
-        else:
-            connector = "└── " if is_last else "├── "
-            result = f"{prefix}{connector}{node}\n"
-
-        # Prepare prefix for children:
-        # If this node is last child, add spaces; else add vertical bar
-        if is_root:
-            new_prefix = ""
-        elif is_last:
-            new_prefix = prefix + "    "
-        else:
-            new_prefix = prefix + "│   "
-
-        child_count = len(node.children)
-        for i, child in enumerate(node.children):
-            last_child = (i == child_count - 1)
-            result += self._print_node(child, new_prefix, last_child, is_root=False)
-
-        return result
+            la = self.__current_token.type
+        self.__lookahead = Terminals.get_enum_by_content(la)
 
     def parse(self):
-        """
-        Start the parsing process.
-
-        Returns:
-            The root node of the parse tree.
-        """
-        self.parse_tree = self.program()
-        return self.parse_tree
-
-    def check_predict_set(self, non_terminal, rule_index):
-        """
-        Check if the current token is in the predict set for a given rule.
-
-        Args:
-            non_terminal: The non-terminal symbol.
-            rule_index: The index of the rule for the non-terminal.
-
-        Returns:
-            True if the current token is in the predict set, False otherwise.
-        """
-        if non_terminal in PREDICT and rule_index in PREDICT[non_terminal]:
-            return self.current_token in PREDICT[non_terminal][rule_index]
-        return False
-
-    # Transition diagram methods for each non-terminal in the grammar
-
-    def program(self):
-        """Program -> DeclarationList $"""
-        node = Node('Program')
-
-        declaration_list_node = self.declaration_list()
-        if declaration_list_node:
-            node.add_child(declaration_list_node)
-
-        # Check for end of input marker
-        if self.current_token == 'EOF':
-            endmarker_node = Node('$', is_terminal=True, lexeme='$')
-            node.add_child(endmarker_node)
-        else:
-            self.handle_error("Expected end of input")
-
-        return node
-
-
-    def declaration_list(self):
-        """DeclarationList -> Declaration DeclarationList | EPSILON"""
-        node = Node('DeclarationList')
-
-        if self.check_predict_set('DeclarationList', 1):  # First rule
-            declaration_node = self.declaration()
-            if declaration_node:
-                node.add_child(declaration_node)
-
-                declaration_list_node = self.declaration_list()
-                if declaration_list_node:
-                    node.add_child(declaration_list_node)
-
-        elif self.check_predict_set('DeclarationList', 2):  # EPSILON rule
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['DeclarationList'])
-
-        return node
-
-    def declaration(self):
-        """Declaration -> DeclarationInitial DeclarationPrime"""
-        node = Node('Declaration')
-
-        declaration_initial_node = self.declaration_initial()
-        if declaration_initial_node:
-            node.add_child(declaration_initial_node)
-
-            declaration_prime_node = self.declaration_prime()
-            if declaration_prime_node:
-                node.add_child(declaration_prime_node)
-
-        return node
-
-    def declaration_initial(self):
-        """DeclarationInitial -> TypeSpecifier ID"""
-        node = Node('DeclarationInitial')
-
-        type_specifier_node = self.type_specifier()
-        if type_specifier_node:
-            node.add_child(type_specifier_node)
-
-            id_node = self.match('ID')
-            if id_node:
-                node.add_child(id_node)
-
-        return node
-
-    def declaration_prime(self):
-        """DeclarationPrime -> FunDeclarationPrime | VarDeclarationPrime"""
-        node = Node('DeclarationPrime')
-
-        if self.check_predict_set('DeclarationPrime', 1):  # FunDeclarationPrime
-            fun_declaration_prime_node = self.fun_declaration_prime()
-            if fun_declaration_prime_node:
-                node.add_child(fun_declaration_prime_node)
-
-        elif self.check_predict_set('DeclarationPrime', 2):  # VarDeclarationPrime
-            var_declaration_prime_node = self.var_declaration_prime()
-            if var_declaration_prime_node:
-                node.add_child(var_declaration_prime_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['DeclarationPrime'])
-
-        return node
-
-
-    def var_declaration_prime(self):
-        """VarDeclarationPrime -> ; | [ NUM ] ;"""
-        node = Node('VarDeclarationPrime')
-
-        if self.check_predict_set('VarDeclarationPrime', 1):  # ;
-            semicolon_node = self.match(';')
-            if semicolon_node:
-                node.add_child(semicolon_node)
-
-        elif self.check_predict_set('VarDeclarationPrime', 2):  # [ NUM ] ;
-            left_bracket_node = self.match('[')
-            if left_bracket_node:
-                node.add_child(left_bracket_node)
-
-                num_node = self.match('NUM')
-                if num_node:
-                    node.add_child(num_node)
-
-                    right_bracket_node = self.match(']')
-                    if right_bracket_node:
-                        node.add_child(right_bracket_node)
-
-                        semicolon_node = self.match(';')
-                        if semicolon_node:
-                            node.add_child(semicolon_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['VarDeclarationPrime'])
-
-        return node
-
-    def fun_declaration_prime(self):
-        """FunDeclarationPrime -> ( Params ) CompoundStmt"""
-        node = Node('FunDeclarationPrime')
-
-        left_paren_node = self.match('(')
-        if left_paren_node:
-            node.add_child(left_paren_node)
-
-            params_node = self.params()
-            if params_node:
-                node.add_child(params_node)
-
-                right_paren_node = self.match(')')
-                if right_paren_node:
-                    node.add_child(right_paren_node)
-
-                    compound_stmt_node = self.compound_stmt()
-                    if compound_stmt_node:
-                        node.add_child(compound_stmt_node)
-
-        return node
-
-    def type_specifier(self):
-        """TypeSpecifier -> int | void"""
-        node = Node('TypeSpecifier')
-
-        if self.check_predict_set('TypeSpecifier', 1):  # int
-            int_node = self.match('int')
-            if int_node:
-                node.add_child(int_node)
-
-        elif self.check_predict_set('TypeSpecifier', 2):  # void
-            void_node = self.match('void')
-            if void_node:
-                node.add_child(void_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['TypeSpecifier'])
-
-        return node
-
-    def params(self):
-        """Params -> int ID ParamPrime ParamList | void"""
-        node = Node('Params')
-
-        if self.check_predict_set('Params', 1):  # int ID ParamPrime ParamList
-            int_node = self.match('int')
-            if int_node:
-                node.add_child(int_node)
-
-                id_node = self.match('ID')
-                if id_node:
-                    node.add_child(id_node)
-
-                    param_prime_node = self.param_prime()
-                    if param_prime_node:
-                        node.add_child(param_prime_node)
-
-                        param_list_node = self.param_list()
-                        if param_list_node:
-                            node.add_child(param_list_node)
-
-        elif self.check_predict_set('Params', 2):  # void
-            void_node = self.match('void')
-            if void_node:
-                node.add_child(void_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Params'])
-
-        return node
-
-    def param_list(self):
-        """ParamList -> , Param ParamList | EPSILON"""
-        node = Node('ParamList')
-
-        if self.check_predict_set('ParamList', 1):  # , Param ParamList
-            comma_node = self.match(',')
-            if comma_node:
-                node.add_child(comma_node)
-
-                param_node = self.param()
-                if param_node:
-                    node.add_child(param_node)
-
-                    param_list_node = self.param_list()
-                    if param_list_node:
-                        node.add_child(param_list_node)
-
-        elif self.check_predict_set('ParamList', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['ParamList'])
-
-        return node
-
-    def param(self):
-        """Param -> DeclarationInitial ParamPrime"""
-        node = Node('Param')
-
-        declaration_initial_node = self.declaration_initial()
-        if declaration_initial_node:
-            node.add_child(declaration_initial_node)
-
-            param_prime_node = self.param_prime()
-            if param_prime_node:
-                node.add_child(param_prime_node)
-
-        return node
-
-    def param_prime(self):
-        """ParamPrime -> [ ] | EPSILON"""
-        node = Node('ParamPrime')
-
-        if self.check_predict_set('ParamPrime', 1):  # [ ]
-            left_bracket_node = self.match('[')
-            if left_bracket_node:
-                node.add_child(left_bracket_node)
-
-                right_bracket_node = self.match(']')
-                if right_bracket_node:
-                    node.add_child(right_bracket_node)
-
-        elif self.check_predict_set('ParamPrime', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['ParamPrime'])
-
-        return node
-
-    def compound_stmt(self):
-        """CompoundStmt -> { DeclarationList StatementList }"""
-        node = Node('CompoundStmt')
-
-        left_brace_node = self.match('{')
-        if left_brace_node:
-            node.add_child(left_brace_node)
-
-            declaration_list_node = self.declaration_list()
-            if declaration_list_node:
-                node.add_child(declaration_list_node)
-
-                statement_list_node = self.statement_list()
-                if statement_list_node:
-                    node.add_child(statement_list_node)
-
-                    right_brace_node = self.match('}')
-                    if right_brace_node:
-                        node.add_child(right_brace_node)
-
-        return node
-
-    def statement_list(self):
-        """StatementList -> Statement StatementList | EPSILON"""
-        node = Node('StatementList')
-
-        if self.check_predict_set('StatementList', 1):  # Statement StatementList
-            statement_node = self.statement()
-            if statement_node:
-                node.add_child(statement_node)
-
-                statement_list_node = self.statement_list()
-                if statement_list_node:
-                    node.add_child(statement_list_node)
-
-        elif self.check_predict_set('StatementList', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['StatementList'])
-
-        return node
-
-    def statement(self):
-        """Statement -> ExpressionStmt | CompoundStmt | SelectionStmt | IterationStmt | ReturnStmt"""
-        node = Node('Statement')
-
-        if self.check_predict_set('Statement', 1):  # ExpressionStmt
-            expression_stmt_node = self.expression_stmt()
-            if expression_stmt_node:
-                node.add_child(expression_stmt_node)
-
-        elif self.check_predict_set('Statement', 2):  # CompoundStmt
-            compound_stmt_node = self.compound_stmt()
-            if compound_stmt_node:
-                node.add_child(compound_stmt_node)
-
-        elif self.check_predict_set('Statement', 3):  # SelectionStmt
-            selection_stmt_node = self.selection_stmt()
-            if selection_stmt_node:
-                node.add_child(selection_stmt_node)
-
-        elif self.check_predict_set('Statement', 4):  # IterationStmt
-            iteration_stmt_node = self.iteration_stmt()
-            if iteration_stmt_node:
-                node.add_child(iteration_stmt_node)
-
-        elif self.check_predict_set('Statement', 5):  # ReturnStmt
-            return_stmt_node = self.return_stmt()
-            if return_stmt_node:
-                node.add_child(return_stmt_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Statement'])
-
-        return node
-
-    def expression_stmt(self):
-        """ExpressionStmt -> Expression ; | break ; | ;"""
-        node = Node('ExpressionStmt')
-
-        if self.check_predict_set('ExpressionStmt', 1):  # Expression ;
-            expression_node = self.expression()
-            if expression_node:
-                node.add_child(expression_node)
-
-                semicolon_node = self.match(';')
-                if semicolon_node:
-                    node.add_child(semicolon_node)
-
-        elif self.check_predict_set('ExpressionStmt', 2):  # break ;
-            break_node = self.match('break')
-            if break_node:
-                node.add_child(break_node)
-
-                semicolon_node = self.match(';')
-                if semicolon_node:
-                    node.add_child(semicolon_node)
-
-        elif self.check_predict_set('ExpressionStmt', 3):  # ;
-            semicolon_node = self.match(';')
-            if semicolon_node:
-                node.add_child(semicolon_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['ExpressionStmt'])
-
-        return node
-
-    def selection_stmt(self):
-        """SelectionStmt -> if ( Expression ) Statement else Statement"""
-        node = Node("SelectionStmt")
-
-        # Match 'if'
-        if self.current_token == 'if':
-            if_node = self.match('if')
-            if if_node:
-                node.add_child(if_node)
-        else:
-            self.handle_error('if')
-
-        # Match '('
-        if self.current_token == '(':
-            lparen_node = self.match('(')
-            if lparen_node:
-                node.add_child(lparen_node)
-        else:
-            self.handle_error('(')
-
-        # Parse Expression
-        expr_node = self.expression()
-        if expr_node:
-            node.add_child(expr_node)
-
-        # Match ')'
-        if self.current_token == ')':
-            rparen_node = self.match(')')
-            if rparen_node:
-                node.add_child(rparen_node)
-        else:
-            self.handle_error(')')
-
-        # Parse first Statement
-        stmt1_node = self.statement()
-        if stmt1_node:
-            node.add_child(stmt1_node)
-
-        # Match 'else'
-        if self.current_token == 'else':
-            else_node = self.match('else')
-            if else_node:
-                node.add_child(else_node)
-        else:
-            self.handle_error('else')
-
-        # Parse second Statement
-        stmt2_node = self.statement()
-        if stmt2_node:
-            node.add_child(stmt2_node)
-
-        return node
-
-    def iteration_stmt(self):
-        """IterationStmt -> while ( Expression ) Statement"""
-        node = Node('IterationStmt')
-
-        while_node = self.match('while')
-        if while_node:
-            node.add_child(while_node)
-
-            left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
-
-                        statement_node = self.statement()
-                        if statement_node:
-                            node.add_child(statement_node)
-
-        return node
-
-    def return_stmt(self):
-        """ReturnStmt -> return ReturnStmtPrime"""
-        node = Node('ReturnStmt')
-
-        return_node = self.match('return')
-        if return_node:
-            node.add_child(return_node)
-
-            return_stmt_prime_node = self.return_stmt_prime()
-            if return_stmt_prime_node:
-                node.add_child(return_stmt_prime_node)
-
-        return node
-
-    def return_stmt_prime(self):
-        """ReturnStmtPrime -> ; | Expression ;"""
-        node = Node('ReturnStmtPrime')
-
-        if self.check_predict_set('ReturnStmtPrime', 1):  # ;
-            semicolon_node = self.match(';')
-            if semicolon_node:
-                node.add_child(semicolon_node)
-
-        elif self.check_predict_set('ReturnStmtPrime', 2):  # Expression ;
-            expression_node = self.expression()
-            if expression_node:
-                node.add_child(expression_node)
-
-                semicolon_node = self.match(';')
-                if semicolon_node:
-                    node.add_child(semicolon_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['ReturnStmtPrime'])
-
-        return node
-
-    def expression(self):
-        """Expression -> SimpleExpressionZegond | ID B"""
-        node = Node('Expression')
-
-        if self.check_predict_set('Expression', 1):  # SimpleExpressionZegond
-            simple_expression_zegond_node = self.simple_expression_zegond()
-            if simple_expression_zegond_node:
-                node.add_child(simple_expression_zegond_node)
-
-        elif self.check_predict_set('Expression', 2):  # ID B
-            id_node = self.match('ID')
-            if id_node:
-                node.add_child(id_node)
-
-                b_node = self.b()
-                if b_node:
-                    node.add_child(b_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Expression'])
-
-        return node
-
-    def b(self):
-        """B -> = Expression | [ Expression ] H | SimpleExpressionPrime"""
-        node = Node('B')
-
-        if self.check_predict_set('B', 1):  # = Expression
-            assign_node = self.match('=')
-            if assign_node:
-                node.add_child(assign_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-        elif self.check_predict_set('B', 2):  # [ Expression ] H
-            left_bracket_node = self.match('[')
-            if left_bracket_node:
-                node.add_child(left_bracket_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-                    right_bracket_node = self.match(']')
-                    if right_bracket_node:
-                        node.add_child(right_bracket_node)
-
-                        h_node = self.h()
-                        if h_node:
-                            node.add_child(h_node)
-
-        elif self.check_predict_set('B', 3):  # SimpleExpressionPrime
-            simple_expression_prime_node = self.simple_expression_prime()
-            if simple_expression_prime_node:
-                node.add_child(simple_expression_prime_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['B'])
-
-        return node
-
-    def h(self):
-        """H -> = Expression | G D C"""
-        node = Node('H')
-
-        if self.check_predict_set('H', 1):  # = Expression
-            assign_node = self.match('=')
-            if assign_node:
-                node.add_child(assign_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-        elif self.check_predict_set('H', 2):  # G D C
-            g_node = self.g()
-            if g_node:
-                node.add_child(g_node)
-
-                d_node = self.d()
-                if d_node:
-                    node.add_child(d_node)
-
-                    c_node = self.c()
-                    if c_node:
-                        node.add_child(c_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['H'])
-
-        return node
-
-    def simple_expression_zegond(self):
-        """SimpleExpressionZegond -> AdditiveExpressionZegond C"""
-        node = Node('SimpleExpressionZegond')
-
-        additive_expression_zegond_node = self.additive_expression_zegond()
-        if additive_expression_zegond_node:
-            node.add_child(additive_expression_zegond_node)
-
-            c_node = self.c()
-            if c_node:
-                node.add_child(c_node)
-
-        return node
-
-    def simple_expression_prime(self):
-        """SimpleExpressionPrime -> AdditiveExpressionPrime C"""
-        node = Node('SimpleExpressionPrime')
-
-        additive_expression_prime_node = self.additive_expression_prime()
-        if additive_expression_prime_node:
-            node.add_child(additive_expression_prime_node)
-
-            c_node = self.c()
-            if c_node:
-                node.add_child(c_node)
-
-        return node
-
-    def c(self):
-        """C -> Relop AdditiveExpression | EPSILON"""
-        node = Node('C')
-
-        if self.check_predict_set('C', 1):  # Relop AdditiveExpression
-            relop_node = self.relop()
-            if relop_node:
-                node.add_child(relop_node)
-
-                additive_expression_node = self.additive_expression()
-                if additive_expression_node:
-                    node.add_child(additive_expression_node)
-
-        elif self.check_predict_set('C', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['C'])
-
-        return node
-
-    def relop(self):
-        """Relop -> < | =="""
-        node = Node('Relop')
-
-        if self.check_predict_set('Relop', 1):  # <
-            lt_node = self.match('<')
-            if lt_node:
-                node.add_child(lt_node)
-
-        elif self.check_predict_set('Relop', 2):  # ==
-            eq_node = self.match('==')
-            if eq_node:
-                node.add_child(eq_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Relop'])
-
-        return node
-
-    def additive_expression(self):
-        """AdditiveExpression -> Term D"""
-        node = Node('AdditiveExpression')
-
-        term_node = self.term()
-        if term_node:
-            node.add_child(term_node)
-
-            d_node = self.d()
-            if d_node:
-                node.add_child(d_node)
-
-        return node
-
-    def additive_expression_prime(self):
-        """AdditiveExpressionPrime -> TermPrime D"""
-        node = Node('AdditiveExpressionPrime')
-
-        term_prime_node = self.term_prime()
-        if term_prime_node:
-            node.add_child(term_prime_node)
-
-            d_node = self.d()
-            if d_node:
-                node.add_child(d_node)
-
-        return node
-
-    def additive_expression_zegond(self):
-        """AdditiveExpressionZegond -> TermZegond D"""
-        node = Node('AdditiveExpressionZegond')
-
-        term_zegond_node = self.term_zegond()
-        if term_zegond_node:
-            node.add_child(term_zegond_node)
-
-            d_node = self.d()
-            if d_node:
-                node.add_child(d_node)
-
-        return node
-
-    def d(self):
-        """D -> Addop Term D | EPSILON"""
-        node = Node('D')
-
-        if self.check_predict_set('D', 1):  # Addop Term D
-            addop_node = self.addop()
-            if addop_node:
-                node.add_child(addop_node)
-
-                term_node = self.term()
-                if term_node:
-                    node.add_child(term_node)
-
-                    d_node = self.d()
-                    if d_node:
-                        node.add_child(d_node)
-
-        elif self.check_predict_set('D', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['D'])
-
-        return node
-
-    def addop(self):
-        """Addop -> + | -"""
-        node = Node('Addop')
-
-        if self.check_predict_set('Addop', 1):  # +
-            plus_node = self.match('+')
-            if plus_node:
-                node.add_child(plus_node)
-
-        elif self.check_predict_set('Addop', 2):  # -
-            minus_node = self.match('-')
-            if minus_node:
-                node.add_child(minus_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Addop'])
-
-        return node
-
-    def term(self):
-        """Term -> SignedFactor G"""
-        node = Node('Term')
-
-        signed_factor_node = self.signed_factor()
-        if signed_factor_node:
-            node.add_child(signed_factor_node)
-
-            g_node = self.g()
-            if g_node:
-                node.add_child(g_node)
-
-        return node
-
-    def term_prime(self):
-        """TermPrime -> SignedFactorPrime G"""
-        node = Node('TermPrime')
-
-        signed_factor_prime_node = self.signed_factor_prime()
-        if signed_factor_prime_node:
-            node.add_child(signed_factor_prime_node)
-
-            g_node = self.g()
-            if g_node:
-                node.add_child(g_node)
-
-        return node
-
-    def term_zegond(self):
-        """TermZegond -> SignedFactorZegond G"""
-        node = Node('TermZegond')
-
-        signed_factor_zegond_node = self.signed_factor_zegond()
-        if signed_factor_zegond_node:
-            node.add_child(signed_factor_zegond_node)
-
-            g_node = self.g()
-            if g_node:
-                node.add_child(g_node)
-
-        return node
-
-    def g(self):
-        """G -> * SignedFactor G | EPSILON"""
-        node = Node('G')
-
-        if self.check_predict_set('G', 1):  # * SignedFactor G
-            multiply_node = self.match('*')
-            if multiply_node:
-                node.add_child(multiply_node)
-
-                signed_factor_node = self.signed_factor()
-                if signed_factor_node:
-                    node.add_child(signed_factor_node)
-
-                    g_node = self.g()
-                    if g_node:
-                        node.add_child(g_node)
-
-        elif self.check_predict_set('G', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['G'])
-
-        return node
-
-    def signed_factor(self):
-        """SignedFactor -> + Factor | - Factor | Factor"""
-        node = Node('SignedFactor')
-
-        if self.check_predict_set('SignedFactor', 1):  # + Factor
-            plus_node = self.match('+')
-            if plus_node:
-                node.add_child(plus_node)
-
-                factor_node = self.factor()
-                if factor_node:
-                    node.add_child(factor_node)
-
-        elif self.check_predict_set('SignedFactor', 2):  # - Factor
-            minus_node = self.match('-')
-            if minus_node:
-                node.add_child(minus_node)
-
-                factor_node = self.factor()
-                if factor_node:
-                    node.add_child(factor_node)
-
-        elif self.check_predict_set('SignedFactor', 3):  # Factor
-            factor_node = self.factor()
-            if factor_node:
-                node.add_child(factor_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['SignedFactor'])
-
-        return node
-
-    def signed_factor_prime(self):
-        node = Node('SignedFactorPrime')
-
-        # Always call factor_prime (there is no other alternative)
-        factor_prime_node = self.factor_prime()
-        node.add_child(factor_prime_node)
-
-        return node
-
-    def signed_factor_zegond(self):
-        """SignedFactorZegond -> + Factor | - Factor | FactorZegond"""
-        node = Node('SignedFactorZegond')
-
-        if self.check_predict_set('SignedFactorZegond', 1):  # + Factor
-            plus_node = self.match('+')
-            if plus_node:
-                node.add_child(plus_node)
-
-                factor_node = self.factor()
-                if factor_node:
-                    node.add_child(factor_node)
-
-        elif self.check_predict_set('SignedFactorZegond', 2):  # - Factor
-            minus_node = self.match('-')
-            if minus_node:
-                node.add_child(minus_node)
-
-                factor_node = self.factor()
-                if factor_node:
-                    node.add_child(factor_node)
-
-        elif self.check_predict_set('SignedFactorZegond', 3):  # FactorZegond
-            factor_zegond_node = self.factor_zegond()
-            if factor_zegond_node:
-                node.add_child(factor_zegond_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['SignedFactorZegond'])
-
-        return node
-
-    def factor(self):
-        """Factor -> ( Expression ) | ID VarCallPrime | NUM"""
-        node = Node('Factor')
-
-        if self.check_predict_set('Factor', 1):  # ( Expression )
-            left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
-
-        elif self.check_predict_set('Factor', 2):  # ID VarCallPrime
-            id_node = self.match('ID')
-            if id_node:
-                node.add_child(id_node)
-
-                var_call_prime_node = self.var_call_prime()
-                if var_call_prime_node:
-                    node.add_child(var_call_prime_node)
-
-        elif self.check_predict_set('Factor', 3):  # NUM
-            num_node = self.match('NUM')
-            if num_node:
-                node.add_child(num_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Factor'])
-
-        return node
-
-    def var_call_prime(self):
-        """VarCallPrime -> ( Args ) | VarPrime"""
-        node = Node('VarCallPrime')
-
-        if self.check_predict_set('VarCallPrime', 1):  # ( Args )
-            left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
-
-                args_node = self.args()
-                if args_node:
-                    node.add_child(args_node)
-
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
-
-        elif self.check_predict_set('VarCallPrime', 2):  # VarPrime
-            var_prime_node = self.var_prime()
-            if var_prime_node:
-                node.add_child(var_prime_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['VarCallPrime'])
-
-        return node
-
-    def var_prime(self):
-        node = Node('VarPrime')
-
-        if self.check_predict_set('VarPrime', 1):  # [ Expression ]
-            left_bracket_node = self.match('[')
-            node.add_child(left_bracket_node)
-
-            expression_node = self.expression()
-            node.add_child(expression_node)
-
-            right_bracket_node = self.match(']')
-            node.add_child(right_bracket_node)
-
-        elif self.current_lexeme in FOLLOW['VarPrime']:  # epsilon production
-            node.add_child(Node('epsilon', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['VarPrime'])
-
-        return node
-
-    def factor_prime(self):
-        """FactorPrime -> ( Args ) | VarPrime | EPSILON"""
-        node = Node('FactorPrime')
-
-        if self.check_predict_set('FactorPrime', 1):  # ( Args )
-            left_paren_node = self.match('(')
-            node.add_child(left_paren_node)
-
-            args_node = self.args()
-            node.add_child(args_node)
-
-            right_paren_node = self.match(')')
-            node.add_child(right_paren_node)
-
-        elif self.check_predict_set('FactorPrime', 2):  # VarPrime
-            var_prime_node = self.var_prime()
-            node.add_child(var_prime_node)
-
-        elif self.current_lexeme in FOLLOW['FactorPrime']:  # EPSILON
-            node.add_child(Node('epsilon', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['FactorPrime'])
-
-        return node
-
-    def factor_zegond(self):
-        """FactorZegond -> ( Expression ) | NUM"""
-        node = Node('FactorZegond')
-
-        if self.check_predict_set('FactorZegond', 1):  # ( Expression )
-            left_paren_node = self.match('(')
-            if left_paren_node:
-                node.add_child(left_paren_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-                    right_paren_node = self.match(')')
-                    if right_paren_node:
-                        node.add_child(right_paren_node)
-
-        elif self.check_predict_set('FactorZegond', 2):  # NUM
-            num_node = self.match('NUM')
-            if num_node:
-                node.add_child(num_node)
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['FactorZegond'])
-
-        return node
-
-    def args(self):
-        """Args -> ArgList | EPSILON"""
-        node = Node('Args')
-
-        if self.check_predict_set('Args', 1):  # ArgList
-            arg_list_node = self.arg_list()
-            if arg_list_node:
-                node.add_child(arg_list_node)
-
-        elif self.check_predict_set('Args', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['Args'])
-
-        return node
-
-    def arg_list(self):
-        """ArgList -> Expression ArgListPrime"""
-        node = Node('ArgList')
-
-        expression_node = self.expression()
-        if expression_node:
-            node.add_child(expression_node)
-
-            arg_list_prime_node = self.arg_list_prime()
-            if arg_list_prime_node:
-                node.add_child(arg_list_prime_node)
-
-        return node
-
-    def arg_list_prime(self):
-        """ArgListPrime -> , Expression ArgListPrime | EPSILON"""
-        node = Node('ArgListPrime')
-
-        if self.check_predict_set('ArgListPrime', 1):  # , Expression ArgListPrime
-            comma_node = self.match(',')
-            if comma_node:
-                node.add_child(comma_node)
-
-                expression_node = self.expression()
-                if expression_node:
-                    node.add_child(expression_node)
-
-                    arg_list_prime_node = self.arg_list_prime()
-                    if arg_list_prime_node:
-                        node.add_child(arg_list_prime_node)
-
-        elif self.check_predict_set('ArgListPrime', 2):  # EPSILON
-            node.add_child(Node('EPSILON', is_terminal=True))
-
-        else:
-            self.handle_error()
-            self.skip_to_synchronizing_set(FOLLOW['ArgListPrime'])
-
-        return node
-
-    def generate_parse_tree_text(self, node=None, depth=0):
-        """
-        Generate a textual representation of the parse tree.
-
-        Args:
-            node: The current node being processed.
-            depth: The current depth in the tree.
-
-        Returns:
-            A list of strings representing the parse tree.
-        """
-        if node is None:
-            node = self.parse_tree
-
-        result = []
-        indent = '│  ' * depth
-
-        if node.is_terminal:
-            if node.lexeme and node.name != 'EPSILON':
-                result.append(f"{indent}├─ {node.name}: {node.lexeme}")
+        is_running = True
+        nodes = [self.node]
+        self.__get_token()
+        while self.stack and is_running:
+            top = self.stack[-1]
+            if type(top) is ActionSymbols:
+                self.code_generator.code_gen(top, self.__current_token)
+                self.stack.pop()
+            elif type(top) is CheckSymbols:
+                self.code_generator.semantic_check(top, self.__current_token)
+                self.stack.pop()
+            elif type(top) is Terminals:
+                if top == Terminals.EPSILON:
+                    self.stack.pop()
+                    node = nodes.pop(0)
+                    node.name = Terminals.EPSILON.content
+                elif top == self.__lookahead:
+                    self.stack.pop()
+                    node = nodes.pop(0)
+                    node.name = '(' + self.__current_token.type + ', ' + self.__current_token.lexeme + ')'
+                    self.__get_token()
+                else:
+                    report_syntax_error(self.__current_token.line_number, f'missing {top.content}')
+                    self.stack.pop()
+                    node = nodes.pop(0)
+                    node.parent = None
             else:
-                result.append(f"{indent}├─ {node.name}")
+                action = ll1_table[top.name][self.__lookahead.name]
+                if action is None:
+                    if self.__lookahead == Terminals.DOLLAR:
+                        report_syntax_error(self.__current_token.line_number, f'Unexpected EOF')
+                        is_running = False
+                        for node in nodes:
+                            node.parent = None
+                    else:
+                        report_syntax_error(self.__current_token.line_number, f'illegal {self.__lookahead.content}')
+                        self.__get_token()
+                elif type(action) is str:
+                    report_syntax_error(self.__current_token.line_number, f'missing {top.name}')
+                    self.stack.pop()
+                    node = nodes.pop(0)
+                    node.parent = None
+                else:
+                    new_node = nodes.pop(0)
+                    new_nodes = []
+                    for variable in action:
+                        if type(variable) is not Terminals and type(variable) is not NonTerminals:
+                            continue
+                        new_nodes.append(Node(variable.name, parent=new_node))
+                    nodes = new_nodes + nodes
+                    self.stack.pop()
+                    self.stack += action[::-1]
+        if is_running:
+            Node(Terminals.DOLLAR.content, self.node)
+        if self.code_generator.is_erroneous:
+            self.code_generator.program_block = []
+
+
+class Terminals(Enum):
+    NUM = 'NUM'
+    ID = 'ID'
+    IF = 'if'
+    ELSE = 'else'
+    ENDIF = 'endif'
+    VOID = 'void'
+    INT = 'int'
+    WHILE = 'while'
+    BREAK = 'break'
+    RETURN = 'return'
+    SEMICOLON = ';'
+    COLON = ':'
+    COMMA = ','
+    BRACKET_OPEN = '['
+    BRACKET_CLOSE = ']'
+    PARENTHESIS_OPEN = '('
+    PARENTHESIS_CLOSE = ')'
+    BRACE_OPEN = '{'
+    BRACE_CLOSE = '}'
+    PLUS = '+'
+    MINUS = '-'
+    STAR = '*'
+    ASSIGN = '='
+    LESS_THAN = '<'
+    EQUAL = '=='
+    SLASH = '/'
+    EPSILON = 'epsilon'
+    DOLLAR = '$'
+
+    def __init__(self, value):
+        self.content = value
+
+    @classmethod
+    def get_enum_by_content(cls, content):
+        for t in Terminals:
+            if t.content == content:
+                return t
+
+
+class NonTerminals(Enum):
+    PROGRAM = (0, [Terminals.INT, Terminals.VOID, Terminals.EPSILON],
+               [Terminals.DOLLAR])
+    DECLARATION_LIST = (1, [Terminals.INT, Terminals.VOID, Terminals.EPSILON],
+                        [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                         Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.WHILE,
+                         Terminals.RETURN, Terminals.PLUS, Terminals.MINUS, Terminals.DOLLAR])
+    DECLARATION = (2, [Terminals.INT, Terminals.VOID],
+                   [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.INT,
+                    Terminals.VOID, Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF,
+                    Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS, Terminals.DOLLAR])
+    DECLARATION_INITIAL = (3, [Terminals.INT, Terminals.VOID],
+                           [Terminals.SEMICOLON, Terminals.BRACKET_OPEN, Terminals.PARENTHESIS_OPEN,
+                            Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    DECLARATION_PRIME = (4, [Terminals.SEMICOLON, Terminals.BRACKET_OPEN, Terminals.PARENTHESIS_OPEN],
+                         [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.INT,
+                          Terminals.VOID, Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF,
+                          Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS, Terminals.DOLLAR])
+    VAR_DECLARATION_PRIME = (5, [Terminals.SEMICOLON, Terminals.BRACKET_OPEN],
+                             [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                              Terminals.INT, Terminals.VOID, Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE,
+                              Terminals.BREAK, Terminals.IF, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS,
+                              Terminals.MINUS, Terminals.DOLLAR])
+    FUN_DECLARATION_PRIME = (6, [Terminals.PARENTHESIS_OPEN],
+                             [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                              Terminals.INT, Terminals.VOID, Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE,
+                              Terminals.BREAK, Terminals.IF, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS,
+                              Terminals.MINUS, Terminals.DOLLAR])
+    TYPE_SPECIFIER = (7, [Terminals.INT, Terminals.VOID],
+                      [Terminals.ID])
+    PARAMS = (8, [Terminals.INT, Terminals.VOID],
+              [Terminals.PARENTHESIS_CLOSE])
+    PARAM_LIST = (9, [Terminals.COMMA, Terminals.EPSILON],
+                  [Terminals.PARENTHESIS_CLOSE])
+    PARAM = (10, [Terminals.INT, Terminals.VOID],
+             [Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    PARAM_PRIME = (11, [Terminals.BRACKET_OPEN, Terminals.EPSILON],
+                   [Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    COMPOUND_STMT = (12, [Terminals.BRACE_OPEN],
+                     [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.INT,
+                      Terminals.VOID, Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF,
+                      Terminals.ENDIF, Terminals.ELSE, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS,
+                      Terminals.MINUS, Terminals.DOLLAR])
+    STATEMENT_LIST = (13, [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                           Terminals.BRACE_OPEN, Terminals.BREAK, Terminals.IF, Terminals.WHILE, Terminals.RETURN,
+                           Terminals.PLUS, Terminals.MINUS, Terminals.EPSILON],
+                      [Terminals.BRACE_CLOSE])
+    STATEMENT = (14,
+                 [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.BRACE_OPEN,
+                  Terminals.BREAK, Terminals.IF, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS],
+                 [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.BRACE_OPEN,
+                  Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF, Terminals.ELSE,
+                  Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    EXPRESSION_STMT = (15,
+                       [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.BREAK,
+                        Terminals.PLUS, Terminals.MINUS],
+                       [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                        Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF,
+                        Terminals.ELSE, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    SELECTION_STMT = (16, [Terminals.IF],
+                      [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                       Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF,
+                       Terminals.ELSE, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    ELSE_STMT = (17, [Terminals.ENDIF, Terminals.ELSE],
+                 [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.BRACE_OPEN,
+                  Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF, Terminals.ELSE,
+                  Terminals.WHILE,
+                  Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    ITERATION_STMT = (18, [Terminals.WHILE],
+                      [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                       Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF,
+                       Terminals.ELSE, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    RETURN_STMT = (19, [Terminals.RETURN],
+                   [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.BRACE_OPEN,
+                    Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF, Terminals.ELSE,
+                    Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    RETURN_STMT_PRIME = (20,
+                         [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS,
+                          Terminals.MINUS],
+                         [Terminals.ID, Terminals.SEMICOLON, Terminals.NUM, Terminals.PARENTHESIS_OPEN,
+                          Terminals.BRACE_OPEN, Terminals.BRACE_CLOSE, Terminals.BREAK, Terminals.IF, Terminals.ENDIF,
+                          Terminals.ELSE, Terminals.WHILE, Terminals.RETURN, Terminals.PLUS, Terminals.MINUS])
+    EXPRESSION = (21, [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                  [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    B = (22,
+         [Terminals.BRACKET_OPEN, Terminals.PARENTHESIS_OPEN, Terminals.ASSIGN, Terminals.LESS_THAN, Terminals.EQUAL,
+          Terminals.PLUS, Terminals.MINUS, Terminals.STAR, Terminals.SLASH, Terminals.EPSILON],
+         [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    H = (23, [Terminals.ASSIGN, Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+              Terminals.SLASH, Terminals.EPSILON],
+         [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    SIMPLE_EXPRESSION_ZEGOND = (24, [Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                                [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE,
+                                 Terminals.COMMA])
+    SIMPLE_EXPRESSION_PRIME = (25, [Terminals.PARENTHESIS_OPEN, Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS,
+                                    Terminals.MINUS, Terminals.STAR, Terminals.SLASH, Terminals.EPSILON],
+                               [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE,
+                                Terminals.COMMA])
+    C = (26, [Terminals.LESS_THAN, Terminals.EQUAL, Terminals.EPSILON],
+         [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    RELOP = (27, [Terminals.LESS_THAN, Terminals.EQUAL],
+             [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS])
+    ADDITIVE_EXPRESSION = (28,
+                           [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                           [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA])
+    ADDITIVE_EXPRESSION_PRIME = (29,
+                                 [Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                                  Terminals.SLASH, Terminals.EPSILON],
+                                 [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE,
+                                  Terminals.COMMA, Terminals.LESS_THAN, Terminals.EQUAL])
+    ADDITIVE_EXPRESSION_ZEGOND = (30, [Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                                  [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE,
+                                   Terminals.COMMA, Terminals.LESS_THAN, Terminals.EQUAL])
+    D = (31, [Terminals.PLUS, Terminals.MINUS, Terminals.EPSILON],
+         [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+          Terminals.LESS_THAN, Terminals.EQUAL])
+    ADDOP = (32, [Terminals.PLUS, Terminals.MINUS],
+             [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS])
+    TERM = (33, [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+            [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+             Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS])
+    TERM_PRIME = (34, [Terminals.PARENTHESIS_OPEN, Terminals.STAR, Terminals.SLASH, Terminals.EPSILON],
+                  [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                   Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS])
+    TERM_ZEGOND = (35, [Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                   [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                    Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS])
+    G = (36, [Terminals.STAR, Terminals.SLASH, Terminals.EPSILON],
+         [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+          Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS])
+    MULOP = (37, [Terminals.STAR, Terminals.SLASH],
+             [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS])
+    SIGNED_FACTOR = (38, [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                     [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                      Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                      Terminals.SLASH])
+    SIGNED_FACTOR_PRIME = (39, [Terminals.PARENTHESIS_OPEN, Terminals.EPSILON],
+                           [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                            Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                            Terminals.SLASH])
+    SIGNED_FACTOR_ZEGOND = (40, [Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                            [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                             Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                             Terminals.SLASH])
+    FACTOR = (41, [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN],
+              [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+               Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR, Terminals.SLASH])
+    VAR_CALL_PRIME = (42, [Terminals.BRACKET_OPEN, Terminals.PARENTHESIS_OPEN, Terminals.EPSILON],
+                      [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                       Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                       Terminals.SLASH])
+    VAR_PRIME = (43, [Terminals.BRACKET_OPEN, Terminals.EPSILON],
+                 [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                  Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                  Terminals.SLASH])
+    FACTOR_PRIME = (44, [Terminals.PARENTHESIS_OPEN, Terminals.EPSILON],
+                    [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                     Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                     Terminals.SLASH])
+    FACTOR_ZEGOND = (45, [Terminals.NUM, Terminals.PARENTHESIS_OPEN],
+                     [Terminals.SEMICOLON, Terminals.BRACKET_CLOSE, Terminals.PARENTHESIS_CLOSE, Terminals.COMMA,
+                      Terminals.LESS_THAN, Terminals.EQUAL, Terminals.PLUS, Terminals.MINUS, Terminals.STAR,
+                      Terminals.SLASH])
+    ARGS = (46,
+            [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS,
+             Terminals.EPSILON],
+            [Terminals.PARENTHESIS_CLOSE])
+    ARG_LIST = (47, [Terminals.ID, Terminals.NUM, Terminals.PARENTHESIS_OPEN, Terminals.PLUS, Terminals.MINUS],
+                [Terminals.PARENTHESIS_CLOSE])
+    ARG_LIST_PRIME = (48, [Terminals.COMMA, Terminals.EPSILON],
+                      [Terminals.PARENTHESIS_CLOSE])
+
+    def __init__(self, idx, first, follow):
+        self.index = idx
+        self.first = first
+        self.follow = follow
+
+    @DynamicClassAttribute
+    def name(self):
+        parts = super(NonTerminals, self).name.lower().split('_')
+        return ''.join([part.capitalize() for part in parts])
+
+
+start_symbol = NonTerminals.PROGRAM
+
+
+productions = {
+    NonTerminals.PROGRAM: [
+        [NonTerminals.DECLARATION_LIST, ActionSymbols.END_OF_PROGRAM]],
+    NonTerminals.DECLARATION_LIST: [
+        [NonTerminals.DECLARATION, NonTerminals.DECLARATION_LIST],
+        [Terminals.EPSILON]],
+    NonTerminals.DECLARATION: [
+        [NonTerminals.DECLARATION_INITIAL, NonTerminals.DECLARATION_PRIME]],
+    NonTerminals.DECLARATION_INITIAL: [
+        [ActionSymbols.SET_DECLARING, ActionSymbols.PUSH, NonTerminals.TYPE_SPECIFIER, ActionSymbols.UPDATE_TYPE,
+         Terminals.ID]],
+    NonTerminals.DECLARATION_PRIME: [
+        [NonTerminals.FUN_DECLARATION_PRIME],
+        [NonTerminals.VAR_DECLARATION_PRIME]],
+    NonTerminals.VAR_DECLARATION_PRIME: [
+        [ActionSymbols.UPDATE_VAR_ATTRIBUTES, CheckSymbols.VAR_ARR_IS_INT, Terminals.SEMICOLON],
+        [Terminals.BRACKET_OPEN, ActionSymbols.UPDATE_ARR_ATTRIBUTES, CheckSymbols.VAR_ARR_IS_INT, Terminals.NUM,
+         Terminals.BRACKET_CLOSE, Terminals.SEMICOLON]],
+    NonTerminals.FUN_DECLARATION_PRIME: [
+        [ActionSymbols.START_FUNCTION, Terminals.PARENTHESIS_OPEN, NonTerminals.PARAMS, Terminals.PARENTHESIS_CLOSE,
+         ActionSymbols.UPDATE_FUNC_ATTRIBUTES, NonTerminals.COMPOUND_STMT, ActionSymbols.RETURN_AT_THE_END_OF_FUNCTION,
+         ActionSymbols.END_SCOPE]],
+    NonTerminals.TYPE_SPECIFIER: [
+        [Terminals.INT],
+        [Terminals.VOID]],
+    NonTerminals.PARAMS: [
+        [ActionSymbols.SET_DECLARING, ActionSymbols.PUSH, Terminals.INT, ActionSymbols.UPDATE_TYPE, Terminals.ID,
+         NonTerminals.PARAM_PRIME, NonTerminals.PARAM_LIST],
+        [Terminals.VOID]],
+    NonTerminals.PARAM_LIST: [
+        [Terminals.COMMA, NonTerminals.PARAM, NonTerminals.PARAM_LIST],
+        [Terminals.EPSILON]],
+    NonTerminals.PARAM: [
+        [NonTerminals.DECLARATION_INITIAL, NonTerminals.PARAM_PRIME]],
+    NonTerminals.PARAM_PRIME: [
+        [ActionSymbols.UPDATE_ARR_ATTRIBUTES, CheckSymbols.VAR_ARR_IS_INT, Terminals.BRACKET_OPEN,
+         Terminals.BRACKET_CLOSE],
+        [ActionSymbols.UPDATE_VAR_ATTRIBUTES, CheckSymbols.VAR_ARR_IS_INT, Terminals.EPSILON]],
+    NonTerminals.COMPOUND_STMT: [
+        [ActionSymbols.START_SCOPE, Terminals.BRACE_OPEN, NonTerminals.DECLARATION_LIST, NonTerminals.STATEMENT_LIST,
+         Terminals.BRACE_CLOSE, ActionSymbols.END_SCOPE]],
+    NonTerminals.STATEMENT_LIST: [
+        [NonTerminals.STATEMENT, NonTerminals.STATEMENT_LIST],
+        [Terminals.EPSILON]],
+    NonTerminals.STATEMENT: [
+        [NonTerminals.EXPRESSION_STMT],
+        [NonTerminals.COMPOUND_STMT],
+        [NonTerminals.SELECTION_STMT],
+        [NonTerminals.ITERATION_STMT],
+        [NonTerminals.RETURN_STMT]],
+    NonTerminals.EXPRESSION_STMT: [
+        [NonTerminals.EXPRESSION, ActionSymbols.TYPE_POP, ActionSymbols.POP, Terminals.SEMICOLON],
+        [CheckSymbols.BREAK_IS_IN_LOOP, Terminals.BREAK, ActionSymbols.BREAK, Terminals.SEMICOLON],
+        [Terminals.SEMICOLON]],
+    NonTerminals.SELECTION_STMT: [
+        [Terminals.IF, Terminals.PARENTHESIS_OPEN, NonTerminals.EXPRESSION, ActionSymbols.TYPE_POP,
+         Terminals.PARENTHESIS_CLOSE,
+         ActionSymbols.SAVE, NonTerminals.STATEMENT, NonTerminals.ELSE_STMT]],
+    NonTerminals.ELSE_STMT: [
+        [ActionSymbols.JPF, Terminals.ENDIF],
+        [Terminals.ELSE, ActionSymbols.JPF_SAVE, NonTerminals.STATEMENT, ActionSymbols.JP, Terminals.ENDIF]],
+    NonTerminals.ITERATION_STMT: [
+        [Terminals.WHILE, ActionSymbols.SAVE, ActionSymbols.LABEL, Terminals.PARENTHESIS_OPEN, NonTerminals.EXPRESSION,
+         ActionSymbols.TYPE_POP, Terminals.PARENTHESIS_CLOSE, ActionSymbols.WHILE_SAVE, NonTerminals.STATEMENT,
+         ActionSymbols.WHILE]],
+    NonTerminals.RETURN_STMT: [
+        [Terminals.RETURN, NonTerminals.RETURN_STMT_PRIME]],
+    NonTerminals.RETURN_STMT_PRIME: [
+        [ActionSymbols.RETURN, Terminals.SEMICOLON],
+        [NonTerminals.EXPRESSION, ActionSymbols.RETURN_VALUE, ActionSymbols.TYPE_POP, Terminals.SEMICOLON]],
+    NonTerminals.EXPRESSION: [
+        [NonTerminals.SIMPLE_EXPRESSION_ZEGOND],
+        [CheckSymbols.ID_IS_DEFINED, ActionSymbols.PUSH_ID, Terminals.ID, NonTerminals.B]],
+    NonTerminals.B: [
+        [Terminals.ASSIGN, NonTerminals.EXPRESSION, CheckSymbols.TYPE_MATCH, ActionSymbols.ASSIGN],
+        [Terminals.BRACKET_OPEN, NonTerminals.EXPRESSION, Terminals.BRACKET_CLOSE, ActionSymbols.UPDATE_ID,
+         NonTerminals.H],
+        [NonTerminals.SIMPLE_EXPRESSION_PRIME]],
+    NonTerminals.H: [
+        [Terminals.ASSIGN, NonTerminals.EXPRESSION, CheckSymbols.TYPE_MATCH, ActionSymbols.ASSIGN],
+        [NonTerminals.G, NonTerminals.D, NonTerminals.C]],
+    NonTerminals.SIMPLE_EXPRESSION_ZEGOND: [
+        [NonTerminals.ADDITIVE_EXPRESSION_ZEGOND, NonTerminals.C]],
+    NonTerminals.SIMPLE_EXPRESSION_PRIME: [
+        [NonTerminals.ADDITIVE_EXPRESSION_PRIME, NonTerminals.C]],
+    NonTerminals.C: [
+        [ActionSymbols.PUSH, NonTerminals.RELOP, NonTerminals.ADDITIVE_EXPRESSION, CheckSymbols.TYPE_MATCH,
+         ActionSymbols.OPERATION],
+        [Terminals.EPSILON]],
+    NonTerminals.RELOP: [
+        [Terminals.LESS_THAN],
+        [Terminals.EQUAL]],
+    NonTerminals.ADDITIVE_EXPRESSION: [
+        [NonTerminals.TERM, NonTerminals.D]],
+    NonTerminals.ADDITIVE_EXPRESSION_PRIME: [
+        [NonTerminals.TERM_PRIME, NonTerminals.D]],
+    NonTerminals.ADDITIVE_EXPRESSION_ZEGOND: [
+        [NonTerminals.TERM_ZEGOND, NonTerminals.D]],
+    NonTerminals.D: [
+        [ActionSymbols.PUSH, NonTerminals.ADDOP, NonTerminals.TERM, CheckSymbols.TYPE_MATCH, ActionSymbols.OPERATION,
+         NonTerminals.D],
+        [Terminals.EPSILON]],
+    NonTerminals.ADDOP: [
+        [Terminals.PLUS],
+        [Terminals.MINUS]],
+    NonTerminals.TERM: [
+        [NonTerminals.SIGNED_FACTOR, NonTerminals.G]],
+    NonTerminals.TERM_PRIME: [
+        [NonTerminals.SIGNED_FACTOR_PRIME, NonTerminals.G]],
+    NonTerminals.TERM_ZEGOND: [
+        [NonTerminals.SIGNED_FACTOR_ZEGOND, NonTerminals.G]],
+    NonTerminals.G: [
+        [ActionSymbols.PUSH, NonTerminals.MULOP, NonTerminals.SIGNED_FACTOR, CheckSymbols.TYPE_MATCH,
+         ActionSymbols.OPERATION, NonTerminals.G],
+        [Terminals.EPSILON]],
+    NonTerminals.MULOP: [
+        [Terminals.STAR],
+        [Terminals.SLASH]],
+    NonTerminals.SIGNED_FACTOR: [
+        [Terminals.PLUS, NonTerminals.FACTOR],
+        [Terminals.MINUS, NonTerminals.FACTOR, ActionSymbols.NEG],
+        [NonTerminals.FACTOR]],
+    NonTerminals.SIGNED_FACTOR_PRIME: [
+        [NonTerminals.FACTOR_PRIME]],
+    NonTerminals.SIGNED_FACTOR_ZEGOND: [
+        [Terminals.PLUS, NonTerminals.FACTOR],
+        [Terminals.MINUS, NonTerminals.FACTOR, ActionSymbols.NEG],
+        [NonTerminals.FACTOR_ZEGOND]],
+    NonTerminals.FACTOR: [
+        [Terminals.PARENTHESIS_OPEN, NonTerminals.EXPRESSION, Terminals.PARENTHESIS_CLOSE],
+        [CheckSymbols.ID_IS_DEFINED, ActionSymbols.PUSH_ID, Terminals.ID, NonTerminals.VAR_CALL_PRIME],
+        [ActionSymbols.SAVE_NUM, Terminals.NUM]],
+    NonTerminals.VAR_CALL_PRIME: [
+        [Terminals.PARENTHESIS_OPEN, NonTerminals.ARGS, Terminals.PARENTHESIS_CLOSE, ActionSymbols.CALL],
+        [NonTerminals.VAR_PRIME]],
+    NonTerminals.VAR_PRIME: [
+        [Terminals.BRACKET_OPEN, NonTerminals.EXPRESSION, ActionSymbols.UPDATE_ID, Terminals.BRACKET_CLOSE],
+        [Terminals.EPSILON]],
+    NonTerminals.FACTOR_PRIME: [
+        [Terminals.PARENTHESIS_OPEN, NonTerminals.ARGS, Terminals.PARENTHESIS_CLOSE, ActionSymbols.CALL],
+        [Terminals.EPSILON]],
+    NonTerminals.FACTOR_ZEGOND: [
+        [Terminals.PARENTHESIS_OPEN, NonTerminals.EXPRESSION, Terminals.PARENTHESIS_CLOSE],
+        [ActionSymbols.SAVE_NUM, Terminals.NUM]],
+    NonTerminals.ARGS: [
+        [ActionSymbols.PUSH_ZERO, NonTerminals.ARG_LIST],
+        [Terminals.EPSILON]],
+    NonTerminals.ARG_LIST: [
+        [CheckSymbols.PARAMETER_NUMBER, NonTerminals.EXPRESSION, CheckSymbols.ARG_TYPE, ActionSymbols.NEW_ARG,
+         NonTerminals.ARG_LIST_PRIME]],
+    NonTerminals.ARG_LIST_PRIME: [
+        [Terminals.COMMA, CheckSymbols.PARAMETER_NUMBER, NonTerminals.EXPRESSION, CheckSymbols.ARG_TYPE,
+         ActionSymbols.NEW_ARG,
+         NonTerminals.ARG_LIST_PRIME],
+        [ActionSymbols.POP, Terminals.EPSILON]]}
+
+
+def first(statement):
+    first_set = set()
+    for i, state in enumerate(statement):
+        if type(state) is not Terminals and type(state) is not NonTerminals:
+            continue
+        if type(state) is NonTerminals:
+            s = set(state.first)
+
+            if Terminals.EPSILON in s:
+                if i < (len(statement) - 1):
+                    s.remove(Terminals.EPSILON)
+                first_set.update(s)
+            else:
+                first_set.update(s)
+                break
         else:
-            result.append(f"{indent}├─ {node.name}")
+            first_set.add(state)
+            break
+    return list(first_set)
 
-            for child in node.children:
-                result.extend(self.generate_parse_tree_text(child, depth + 1))
 
-        return result
+
+
+ll1_table = {}
+for nonterminal in NonTerminals:
+    ll1_table[nonterminal.name] = {}
+    row = {}
+    for terminal in Terminals:
+        row[terminal.name] = None
+    ll1_table[nonterminal.name] = row
+
+
+def create_parsing_table():
+    for nonterminal in NonTerminals:
+        action_leading_to_epsilon = None
+        for production in productions[nonterminal]:
+            for terminal in first(production):
+                if terminal != Terminals.EPSILON:
+                    ll1_table[nonterminal.name][terminal.name] = production
+                else:
+                    action_leading_to_epsilon = production
+        default_value = action_leading_to_epsilon if action_leading_to_epsilon else 'synch'
+        for terminal in nonterminal.follow:
+            if ll1_table[nonterminal.name][terminal.name] is None:
+                ll1_table[nonterminal.name][terminal.name] = default_value
+
+
+
+def report_syntax_error(error_line, error_message):
+    print("error_line")
+    print(error_line)
+    print("error_message")
+    print(error_message)

@@ -176,3 +176,6 @@ cython_debug/
 /tokens.txt
 /symbol_table.txt
 /test_cases/
+/phase3_tester/
+/.idea/
+/output.txt
