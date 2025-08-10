@@ -1,3 +1,6 @@
+# Sepehr Vahedi
+# 99170615
+
 from symbols import CheckSymbols
 from lexer import Token
 from symbols import SymbolTable
